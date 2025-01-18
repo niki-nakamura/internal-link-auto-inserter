@@ -201,21 +201,6 @@ function getDateStrNDaysAgo(n) {
 
 ---
 
-## 8. ファイル構成例
-
-```
-google-search-console-to-sheets/
-├─ README.md                // ← このドキュメント
-└─ src/
-   ├─ Code.gs               // メインのGASスクリプト
-   └─ appsscript.json       // マニフェストファイル (スコープ設定等)
-```
-
-`README.md` で手順を説明し、`src`ディレクトリにスクリプト関連のファイルを配置する例です。  
-Apps Script で直接編集・デプロイする場合は、[clasp](https://github.com/google/clasp) (Apps ScriptのCLI) を使って同期する方法もあります。
-
----
-
 ## 9. まとめ・その他のコツ
 - **手順は「GCP設定 → スプレッドシート設定 → コード記述 → 実行」**の順に揃える  
 - 画面キャプチャや図を README に添付すると、さらに分かりやすくなる  
@@ -228,9 +213,3 @@ Apps Script で直接編集・デプロイする場合は、[clasp](https://gith
 - This project is licensed under the MIT License. (例)
 
 開発・利用にあたっては、**Google Cloud Platform**や**Google Apps Script**の利用規約・クォータ制限等に注意してください。
-
----
-
-以上が、GitHub等でのREADMEとして掲載する想定の一例です。  
-**リポジトリ名**や**ディレクトリ構成**は好みに合わせてアレンジ可能です。  
-適宜、**画面キャプチャ**や**GIFアニメーション**を追加すると、よりわかりやすいガイドになります。  
