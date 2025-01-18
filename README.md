@@ -1,22 +1,3 @@
-以下に、「Search Console のデータをスプレッドシートに出力する手順」をまとめた、**README向けのドキュメント例**を示します。  
-GitHubなどのリポジトリに配置することを想定し、**リポジトリ名や説明文の例**、**構成のコツ**も合わせて提案します。
-
----
-
-# Repository Name (例)
-
-```
-google-search-console-to-sheets
-```
-
-## Description (ディスクリプション例)
-
-```
-A Google Apps Script and GCP setup guide to fetch Google Search Console performance data (queries, clicks, impressions, CTR, position) into a spreadsheet automatically. 
-日本語: Google Search Consoleのパフォーマンスデータ（検索クエリ×URL×24時間など）を自動的にスプレッドシートに取り込むためのGAS＋GCP設定ガイド。
-```
-
----
 
 # Google Search Console Data to Spreadsheet  
 このリポジトリ（またはドキュメント）は、**Google Search Console (以下 GSC)** に登録されたサイトの「検索クエリ・クリック数・表示回数・CTR・掲載順位」などのデータを、**Google スプレッドシート**へ自動的に抽出・記録する方法をまとめたものです。
