@@ -65,7 +65,9 @@ my-internal-linker/
 ### 3. スクリプト実装例
 
 #### 3-1. 設定ファイルの読み込み
-```python
+
+```
+python
 import json
 
 def load_link_mapping(path='data/linkMapping.json'):
@@ -107,6 +109,7 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
                 return match.group("kw")
         content = re.sub(pattern, replacement, content, count=1)
     return content
+```
 
 ※ キーワードに対して、既にリンクが存在しない箇所にリンクを挿入する処理を実装します。
 
