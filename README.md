@@ -20,3 +20,14 @@
 ## フォルダ構成
 以下はリポジトリの基本的なフォルダ構成例です。
 
+my-internal-linker/
+├─ .github/
+│   └─ workflows/
+│       └─ link-insertion.yml   // GitHub Actionsワークフロー定義ファイル
+├─ data/
+│   └─ linkMapping.json         // キーワードとURLのマッピング (例)
+├─ scripts/
+│   └─ insert_links.py          // Pythonスクリプト(または Node.js 等)
+└─ README.md
+
+
