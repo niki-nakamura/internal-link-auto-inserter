@@ -76,7 +76,7 @@ def main():
     link_mapping = load_link_mapping('data/linkMapping.json')
     
     # 2. 対象の投稿IDリストを取得する(例: 自前管理 or WP APIで一覧取得)
-    post_ids = [1, 2, 3]  # 例
+    post_ids = [24823,24862]  # 追加減可能
     
     # 3. WP接続情報 (GitHub ActionsのSecretsで渡す)
     wp_url = "https://example.com"
