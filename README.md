@@ -20,7 +20,8 @@
 ## フォルダ構成
 以下はリポジトリの基本的なフォルダ構成例です。
 
-...
+
+```
 my-internal-linker/
 ├─ .github/
 │   └─ workflows/
@@ -30,7 +31,19 @@ my-internal-linker/
 ├─ scripts/
 │   └─ insert_links.py          // Pythonスクリプト(または Node.js 等)
 └─ README.md
-...
+
+```
+
+1. **`.github/workflows/check_404.yml`**  
+   - GitHub Actionsで定期実行するためのワークフローファイルです。  
+2. **`scripts/check_404.py`**  
+   - サイトマップを読み取り、URLを抽出して404を検出し、Slackに通知するPythonスクリプト。  
+3. **`requirements.txt`**  
+   - `requests`など、Pythonスクリプト実行に必要なライブラリを明記します。  
+4. **`README.md`**  
+   - セットアップ手順や使い方をドキュメント化しておくと、プロジェクトのメンバーや将来の運用で助かります。
+
+---
 
 
 ## 主な実装手順
