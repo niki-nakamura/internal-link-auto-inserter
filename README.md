@@ -1,215 +1,203 @@
 
-# Google Search Console Data to Spreadsheet  
-このリポジトリ（またはドキュメント）は、**Google Search Console (以下 GSC)** に登録されたサイトの「検索クエリ・クリック数・表示回数・CTR・掲載順位」などのデータを、**Google スプレッドシート**へ自動的に抽出・記録する方法をまとめたものです。
 
-## 1. 前提
-- すでに**GSC**で対象サイト(ドメイン or URLプレフィックス)を登録し、該当サイトに「閲覧者以上の権限」が付与されている Google アカウントを用意している
-- **Google Cloud Platform (GCP)** のアカウントがある
-- スプレッドシート上で**Google Apps Script (GAS)** を編集する環境がある
+**README.md**
 
-## 2. 全体像
-1. **GCP側の設定**  
-   - GCPにプロジェクトを作成し、Search Console API を有効にする  
-   - OAuth同意画面を作成して、スクリプト実行用のアカウントをテストユーザーに追加  
-2. **スプレッドシート側の設定**  
-   - Apps Script プロジェクトにて GCP プロジェクト番号を紐付け  
-   - `appsscript.json` (マニフェストファイル) のOAuthスコープを設定  
-3. **GAS スクリプトの実装**  
-   - B列(C列)のキーワード・URLを読み取って Search Console API を呼び出し  
-   - D列へ検索結果のパフォーマンス指標を自動で書き込む  
-4. **実行 & 認証**  
-   - 初回実行時に Google の OAuth 同意フローでアクセス権を承認  
-   - D列にデータが反映されるのを確認  
+```markdown
+# 内部リンク自動挿入システム
 
----
+## 概要
+このリポジトリは、GitHub Actions と独自スクリプト（例：Python）を活用し、WordPress の投稿本文に対して自動で内部リンクを挿入する仕組みを実装するためのサンプルプロジェクトです。本システムでは、以下の機能を実現します。
 
-## 3. GCP側の設定
-### 3-1. プロジェクト作成
+- **自動リンク挿入ロジック**  
+  投稿本文内の指定キーワードに対して、事前に定義したリンク先 URL を挿入します。  
+  ※1記事あたりのリンク挿入数や、既存リンクの除外など、細かい制御が可能です。
 
-1. [Google Cloud Platform (GCP)コンソール](https://console.cloud.google.com/) にアクセス  
-2. 画面上部の「プロジェクトを選択」→「新しいプロジェクトを作成」  
-3. プロジェクト名はわかりやすいものにし、「作成」  
+- **WordPress 連携**  
+  WP REST API や WP-CLI＋SSH を利用して、対象の投稿を取得・更新します。  
+  認証情報は GitHub Actions の Secrets で安全に管理します。
 
-### 3-2. Search Console APIを有効化
+- **GitHub Actions による自動化**  
+  手動実行、スケジュール実行、プッシュ時など任意のトリガーでスクリプトを実行します。
 
-1. 左メニュー「APIとサービス」→「ライブラリ」  
-2. 「Search Console API」を検索、クリックして「有効にする」ボタンを押す  
+- **バージョン管理**  
+  投稿本文やリンク設定ファイルを GitHub 上で管理し、変更履歴を追跡可能にします。
 
-### 3-3. OAuth同意画面の設定
+## フォルダ構成
+以下はリポジトリの基本的なフォルダ構成例です。
 
-1. 左メニュー「APIとサービス」→「OAuth同意画面」をクリック  
-2. 「外部ユーザー」or「内部ユーザー」を選択（個人利用なら「外部」でもOK）  
-3. 「アプリ名」「ユーザーサポートメール」を入力  
-4. スコープ設定は基本的に追加不要 → 「保存して次へ」  
-5. テストユーザーに自分（またはチーム）の Google アカウントを追加 →「保存」  
-
-これでGCP側のOAuth設定が完了です。
-
----
-
-## 4. スプレッドシート側の設定
-### 4-1. Apps Scriptエディタを開く
-1. GSCデータを出力したいスプレッドシートを開く  
-2. 上部メニュー「拡張機能」→「Apps Script」をクリック  
-3. 別タブでApps Scriptエディタが開く  
-
-### 4-2. GCPのプロジェクト紐付け
-1. Apps Scriptの左下メニューの「設定(歯車アイコン)」→「Google Cloud プロジェクト」欄  
-2. 「プロジェクトを変更」ボタンをクリック  
-3. 先ほど作成したGCPプロジェクトの「プロジェクト番号」を入力 →「プロジェクトを設定」  
-4. 正しく紐付けされると、設定画面に現在のプロジェクト番号が表示される  
-
-### 4-3. マニフェストファイルの編集
-1. 同じ設定画面で「appsscript.json をエディタに表示する」をオン  
-2. エディタ左のファイルツリーに「appsscript.json」が表示されるので開く  
-3. `"oauthScopes"` を下記のように設定して保存  
-
-```jsonc
-{
-  "timeZone": "Asia/Tokyo",
-  "dependencies": {},
-  "exceptionLogging": "STACKDRIVER",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/spreadsheets",       // スプレッドシート操作
-    "https://www.googleapis.com/auth/webmasters",         // サーチコンソールAPI
-    "https://www.googleapis.com/auth/script.external_request" // UrlFetchApp利用
-  ],
-  "runtimeVersion": "V8"
-}
+```
+my-internal-linker/
+├─ .github/
+│   └─ workflows/
+│       └─ link-insertion.yml   // GitHub Actions ワークフロー定義ファイル
+├─ data/
+│   └─ linkMapping.json         // キーワードと URL のマッピングデータ
+├─ scripts/
+│   └─ insert_links.py          // 内部リンク挿入ロジックを実装するスクリプト（Python例）
+└─ README.md
 ```
 
----
+## 主な実装手順
 
-## 5. GASスクリプトの実装例
+### 1. 要件定義
+- **自動リンク挿入ロジック**  
+  キーワードとリンク先 URL のマッピングを元に、投稿本文中に自動でリンクを挿入する処理を設計します。  
+  ※重複挿入防止、リンク挿入回数の制限などのルールも検討します。
 
-以下は、シート上の**B列**に「検索クエリ」、**C列**に「URL」を入力し、**D列**に24時間分のサーチコンソール指標（クリック数/表示数/CTR/平均順位）を出力する例です。  
+- **WordPress 連携**  
+  投稿本文の取得・更新には WP REST API（または WP-CLI＋SSH）を利用し、認証情報は GitHub Secrets で管理します。
 
-> **注意**: Search Consoleは当日データが未反映の場合が多く、正確には2〜3日遅れで数値が確定します。ここでは「24時間分」をサンプルとして指定しますが、データが「データなし」になる場合があります。
+- **自動化の仕組み**  
+  GitHub Actions を用いて、任意のトリガー（例：手動実行、スケジュール実行、プッシュ時）でスクリプトを実行します。
 
-```js
-/**
- * スプレッドシートのB列(キーワード)、C列(URL)を読み取り、
- * 直近24時間を指定してSearch Console APIから検索パフォーマンス情報を取得し、D列に書き込む
- */
-function fetchSCDataFor24h() {
-  // (1) 対象シートの取得
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("List_4"); // 実際のシート名に合わせて変更
+### 2. リポジトリ構築とフォルダ作成
+上記のフォルダ構成に沿って、GitHub リポジトリを作成してください。
 
-  // (2) A～C列の最終行を取得し、2行目以降をループ
-  const lastRow = sheet.getLastRow();
-  for (let row = 2; row <= lastRow; row++) {
-    const query = sheet.getRange(row, 2).getValue();   // B列:検索クエリ
-    const pageUrl = sheet.getRange(row, 3).getValue(); // C列:URL
+### 3. スクリプト実装例
 
-    // 空ならスキップ
-    if (!query || !pageUrl) continue;
+#### 3-1. 設定ファイルの読み込み
+```python
+import json
 
-    // (3) 直近24時間の期間を設定 (実際に当日分が反映されていないこともあります)
-    const startDate = getDateStrNDaysAgo(1);
-    const endDate   = getDateStrNDaysAgo(0);
+def load_link_mapping(path='data/linkMapping.json'):
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+```
+※ JSON ファイルを読み込み、 `{"キーワード": "URL", ...}` の形式でマッピングデータを取得します。
 
-    // (4) APIリクエスト用のpayload
-    const payload = {
-      startDate: startDate,
-      endDate: endDate,
-      dimensions: ["query", "page"],
-      dimensionFilterGroups: [{
-        filters: [
-          {dimension: "query", operator: "equals", expression: query},
-          {dimension: "page", operator: "equals", expression: pageUrl}
-        ]
-      }],
-      rowLimit: 100
-    };
+#### 3-2. 投稿データの取得
+```python
+import requests
 
-    // (5) サーチコンソールAPIエンドポイントを設定
-    // ドメインプロパティの場合 "sc-domain:example.com" などになる
-    // URLプレフィックスの場合は https%3A%2F%2Fexample.com%2F のようにURLエンコードして指定
-    const propertyUrlEncoded = encodeURIComponent("https://example.com/");
-    const apiUrl = `https://www.googleapis.com/webmasters/v3/sites/${propertyUrlEncoded}/searchAnalytics/query`;
+def get_post_content(post_id, wp_url, wp_username, wp_password):
+    response = requests.get(
+        f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
+        auth=(wp_username, wp_password)
+    )
+    data = response.json()
+    return data.get('content', {}).get('rendered', '')
+```
+※ WP REST API を利用して、対象投稿の本文 (HTML) を取得します。
 
-    const options = {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true,
-      headers: {
-        Authorization: "Bearer " + ScriptApp.getOAuthToken()
-      }
-    };
+#### 3-3. テキストのパース & リンク挿入
+```python
+import re
 
-    let resultText = "データなし";
-    try {
-      // (6) API呼び出し
-      const response = UrlFetchApp.fetch(apiUrl, options);
-      const json = JSON.parse(response.getContentText());
-      const rows = json.rows;
+def insert_links_to_content(content, link_mapping, max_links_per_post=3):
+    links_added = 0
+    for keyword, url in link_mapping.items():
+        if links_added >= max_links_per_post:
+            break
+        pattern = rf'(?<!<a[^>]*>)(?P<kw>{re.escape(keyword)})(?![^<]*<\/a>)'
+        def replacement(match):
+            nonlocal links_added
+            if links_added < max_links_per_post:
+                links_added += 1
+                return f'<a href="{url}">{match.group("kw")}</a>'
+            else:
+                return match.group("kw")
+        content = re.sub(pattern, replacement, content, count=1)
+    return content
+```
+※ キーワードに対して、既にリンクが存在しない箇所にリンクを挿入する処理を実装します。
 
-      // (7) 結果取得
-      if (rows && rows.length > 0) {
-        const data = rows[0]; // 配列内の最初のレコードを取得
-        const clicks = data.clicks || 0;
-        const impressions = data.impressions || 0;
-        const ctr = (data.ctr * 100).toFixed(1) + "%";
-        const position = data.position.toFixed(1);
-
-        resultText = `クリック:${clicks}, 表示:${impressions}, CTR:${ctr}, 平均順位:${position}`;
-      }
-    } catch (e) {
-      resultText = "APIエラー:" + e;
+#### 3-4. 投稿内容の更新
+```python
+def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
+    payload = {
+        'content': new_content
     }
+    response = requests.post(
+        f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
+        json=payload,
+        auth=(wp_username, wp_password)
+    )
+    return response.status_code, response.text
+```
+※ 更新後の本文を WP REST API 経由で WordPress に反映します。
 
-    // (8) D列に書き込み
-    sheet.getRange(row, 4).setValue(resultText);
-  }
-}
-
-/**
- * 今日からn日前の日付(YYYY-MM-DD)を返す関数
- */
-function getDateStrNDaysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  const yyyy = d.getFullYear();
-  const mm = ("0" + (d.getMonth() + 1)).slice(-2);
-  const dd = ("0" + d.getDate()).slice(-2);
-  return `${yyyy}-${mm}-${dd}`;
-}
+#### 3-5. メイン実行関数の例
+```python
+def main():
+    # リンクマッピングの読み込み
+    link_mapping = load_link_mapping('data/linkMapping.json')
+    
+    # 対象投稿IDのリスト（例として固定のIDリスト）
+    post_ids = [1, 2, 3]
+    
+    # WordPress 接続情報（GitHub Actions の Secrets で管理）
+    wp_url = "https://example.com"
+    wp_username = "myuser"
+    wp_password = "mypassword"
+    
+    for pid in post_ids:
+        original_content = get_post_content(pid, wp_url, wp_username, wp_password)
+        updated_content = insert_links_to_content(original_content, link_mapping)
+        status, res_text = update_post_content(pid, updated_content, wp_url, wp_username, wp_password)
+        print(f"Updated post {pid}: status={status}")
 ```
 
----
+### 4. GitHub Actions の設定例
+以下は、`.github/workflows/link-insertion.yml` の設定例です。
 
-## 6. 実行と認証フロー
-1. スクリプトエディタで `fetchSCDataFor24h` を選択し、実行ボタンをクリック  
-2. 初回はOAuthの同意画面が表示される  
-   - 「詳細」→「（安全でないページに移動）」などを選択し、同意フローを完了  
-3. スクリプトが完了したら、スプレッドシートに戻ってD列を確認  
-4. 該当のクエリ・URLに応じて「クリック:〇, 表示:〇, CTR:〇%, 平均順位:〇」という形で出力される  
+```yaml
+name: Internal Link Insertion
 
----
+on:
+  workflow_dispatch:   # 手動実行
+  schedule:
+    - cron: '0 3 * * *'   # 毎日午前3時に実行する例
 
-## 7. 注意事項・運用のヒント
-- **Search Console のデータ反映遅延**  
-  当日分はすぐに反映されず、2～3日遅れて確定する傾向が強いです。「直近24時間」と指定しても「データなし」となるケースがあります。  
-- **GASの実行時間制限 (6分)**  
-  行数が多いと6分を超える恐れがあります。大量取得の場合は行を分割するなど工夫をしましょう。  
-- **定期実行 (トリガー設定)**  
-  1日1回や特定の時刻に自動実行したい場合は、スクリプトエディタ左の「トリガー」から時間ベースのトリガーを登録できます。  
-- **Search Console への権限**  
-  スクリプトを動かすGoogleアカウント (またはサービスアカウント) が、必ず対象サイトで「閲覧者」以上の権限を持っている必要があります。  
+jobs:
+  link-insertion-job:
+    runs-on: ubuntu-latest
 
----
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
 
-## 9. まとめ・その他のコツ
-- **手順は「GCP設定 → スプレッドシート設定 → コード記述 → 実行」**の順に揃える  
-- 画面キャプチャや図を README に添付すると、さらに分かりやすくなる  
-- コードの各ステップにコメントを入れる  
-- 実行ログ(コンソール)の見方や、APIエラーの典型的な原因なども補足しておくと親切  
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
----
+      - name: Install dependencies
+        run: pip install requests
 
-# License
-- This project is licensed under the MIT License. (例)
+      - name: Run link insertion script
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
+        run: |
+          python scripts/insert_links.py
+```
+※ GitHub Secrets にて WP_URL、WP_USERNAME、WP_PASSWORD を設定し、セキュアな環境で実行します。
 
-開発・利用にあたっては、**Google Cloud Platform**や**Google Apps Script**の利用規約・クォータ制限等に注意してください。
+## テスト・検証フェーズ
+1. **ステージング環境での検証**  
+   テスト用の WordPress 環境で、リンク挿入の挙動を確認します。
+
+2. **少数記事での動作チェック**  
+   限定的な記事に対して実行し、意図しない改変がないか検証します。
+
+3. **特殊ケースのテスト**  
+   ・既にリンクが設定済みのキーワード  
+   ・同一キーワードが複数存在する場合  
+   ・複雑な HTML タグの中での処理など
+
+## 運用と拡張
+- **キーワード・URL リストの更新**  
+  `data/linkMapping.json` を更新し、Git プッシュすることで即座に反映可能です。
+
+- **リンク挿入ロジックの改善**  
+  挿入頻度やマッチングルールの調整、部分一致・完全一致の切り替え等、運用状況に応じて拡張できます。
+
+- **リンク切れチェックやレポート生成**  
+  挿入結果のログ取得や、リンク先の 404 チェックなどを追加実装することで、運用の精度を高められます。
+
+## 免責事項
+本プロジェクトは、内部リンク自動挿入の一例として提供しています。実際の運用にあたっては、十分なテストと検証を行ってください。
+
+## ライセンス
+本プロジェクトは [MIT License](LICENSE) の下で公開されています。
