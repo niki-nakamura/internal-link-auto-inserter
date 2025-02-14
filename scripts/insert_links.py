@@ -72,7 +72,7 @@ def main():
     wp_password = os.environ.get("WP_PASSWORD")
     
     # 3. 対象の投稿IDをリストで指定（テスト用）
-    post_ids = [24823, 24862]
+    post_ids = [24823]
     
     for pid in post_ids:
         original_content = get_post_content(pid, wp_url, wp_username, wp_password)
