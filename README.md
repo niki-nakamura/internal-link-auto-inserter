@@ -29,12 +29,13 @@
 my-internal-linker/
 ├─ .github/
 │   └─ workflows/
-│       └─ link-insertion.yml   // GitHub Actions ワークフロー定義ファイル
+│       └─ link-insertion.yml   // GitHub Actionsワークフロー定義ファイル
 ├─ data/
-│   └─ linkMapping.json         // キーワードと URL のマッピングデータ
+│   └─ linkMapping.json         // キーワードとURLのマッピング (例)
 ├─ scripts/
-│   └─ insert_links.py          // 内部リンク挿入ロジックを実装するスクリプト（Python例）
+│   └─ insert_links.py          // Pythonスクリプト(または Node.js 等)
 └─ README.md
+
 ```
 
 ## 主な実装手順
