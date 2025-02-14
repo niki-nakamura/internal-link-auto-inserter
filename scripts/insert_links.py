@@ -21,7 +21,7 @@ def get_post_content(post_id, wp_url, wp_username, wp_password):
 
 import re
 
-def insert_links_to_content(content, link_mapping, max_links_per_post=3):
+def insert_links_to_content(content, link_mapping, max_links_per_post=1):
     """
     キーワードにマッチした箇所にリンクを挿入する。
     重複を避けるため、すでに <a>タグ がある箇所は除外。
@@ -31,9 +31,17 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
     
     # 大文字小文字を区別する/しない等、要件に応じて調整
     for keyword, url in link_mapping.items():
-        # 重複挿入や制限オーバーを回避
         if links_added >= max_links_per_post:
             break
+
+    # 検索して1回だけ置換してみる
+    pattern = rf'(?<!<a[^>]*>)(?P<kw>{re.escape(keyword)})(?![^<]*<\/a>)'
+    ...
+    content_after = re.sub(pattern, replacement, content, count=1)
+    
+    # もし置換が発生していたら(= links_addedが増えていたら)、そこでループを抜ける
+    if links_added > 0:
+        break
         
         # すでにリンクがある箇所を避けるため、正規表現で <a> タグを含む部分は対象外にする etc.
         # シンプルな例として、keyword単位で置換 (要検討: 全置換 vs 部分置換)
