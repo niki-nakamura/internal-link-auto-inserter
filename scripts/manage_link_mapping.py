@@ -23,6 +23,7 @@ def main():
     if not link_mapping:
         st.info("現在マッピングは空です。フォームから新規追加してください。")
 
+    # 既存項目の表示・編集・削除
     for kw, url in list(link_mapping.items()):
         col1, col2, col3 = st.columns([3, 5, 1])
         with col1:
@@ -32,27 +33,29 @@ def main():
         with col3:
             if st.button("削除", key=f"delete_{kw}"):
                 del link_mapping[kw]
-                st.rerun()  # ← ここでも再描画を行いたい場合
+                # リフレッシュ
+                st.rerun()
 
+        # キーワードorURLが変更された場合はマッピングを更新
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
         elif new_url != url:
             link_mapping[kw] = new_url
 
+    # 新規追加フォーム
     st.subheader("新規追加")
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
-
     if st.button("追加"):
         if new_kw and new_url:
             link_mapping[new_kw] = new_url
             st.success(f"追加しました: {new_kw} => {new_url}")
-            # st.experimental_rerun() → st.rerun() へ変更
             st.rerun()
         else:
             st.warning("キーワードとURLを入力してください。")
 
+    # JSONファイルへの保存
     if st.button("保存"):
         save_link_mapping(link_mapping)
         st.success("JSONファイルに保存しました。GitHubへコミットしてください。")
