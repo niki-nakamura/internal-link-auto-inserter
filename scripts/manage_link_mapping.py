@@ -22,8 +22,10 @@ def save_link_mapping_locally(mapping, path=JSON_PATH):
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 def commit_to_github(mapping_json_str):
-    """GitHubの contents API を使って data/linkMapping.json を更新する。
-       st.secrets["secrets"]["GITHUB_TOKEN"] にPATを入れておく(Contents Write権限必須)。"""
+    """
+    GitHubの contents API を使って data/linkMapping.json を更新する。
+    st.secrets["secrets"]["GITHUB_TOKEN"] に PAT を入れておく(Contents Write権限必須)。
+    """
     try:
         token = st.secrets["secrets"]["GITHUB_TOKEN"]
     except KeyError:
@@ -45,6 +47,7 @@ def commit_to_github(mapping_json_str):
         st.error(f"[ERROR] Fetching file from GitHub: {get_res.status_code}, {get_res.text}")
         return
 
+    # Base64エンコードしてPUT
     content_b64 = base64.b64encode(mapping_json_str.encode("utf-8")).decode("utf-8")
     put_data = {
         "message": "Update linkMapping.json from Streamlit",
@@ -61,7 +64,7 @@ def commit_to_github(mapping_json_str):
         st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
 def main():
-    st.write("DEBUG: st.secrets:", st.secrets)  # 確認用に表示
+    st.write("DEBUG: st.secrets:", st.secrets)  # デバッグ表示
 
     st.title("内部リンク マッピング管理ツール")
     st.write("キーワードとURLを追加・編集し、[保存]ボタンでローカルJSONへ書き込み→GitHubへコミットします。")
@@ -71,7 +74,7 @@ def main():
     if not link_mapping:
         st.info("まだマッピングがありません。フォームから追加してください。")
 
-    # 既存の項目を一覧表示
+    # 既存項目の表示・編集・削除
     for kw, url in list(link_mapping.items()):
         col1, col2, col3 = st.columns([3, 5, 1])
         with col1:
@@ -81,16 +84,19 @@ def main():
         with col3:
             if st.button("削除", key=f"delete_{kw}"):
                 del link_mapping[kw]
+                # ▼ 削除したらすぐローカル保存し、再起動
+                save_link_mapping_locally(link_mapping)
+                st.success(f"削除しました: {kw}")
                 st.rerun()
 
-        # キーワード/URLが変更されたら更新
+        # キーワードやURLを編集した場合
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
         elif new_url != url:
             link_mapping[kw] = new_url
 
-    # 新規追加
+    # 新規追加フォーム
     st.subheader("新規追加")
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
@@ -98,16 +104,16 @@ def main():
     if st.button("追加"):
         if new_kw and new_url:
             link_mapping[new_kw] = new_url
-            # ▼ 「追加」を押した段階でローカルファイルにも書き込み、再実行後も残るようにする
+            # ▼ 追加したらローカル保存し、再起動
             save_link_mapping_locally(link_mapping)
             st.success(f"追加しました: {new_kw} => {new_url}")
             st.rerun()
         else:
             st.warning("キーワードとURLを両方入力してください。")
 
-    # 保存ボタン
+    # 保存ボタン → GitHubへコミット
     if st.button("保存"):
-        # 1. 改めてローカル保存 (何か変更があれば反映)
+        # 1. 改めてローカルファイルを保存 (編集漏れがあれば反映)
         save_link_mapping_locally(link_mapping)
         st.success("ローカルJSONファイルを更新しました")
 
