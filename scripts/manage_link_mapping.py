@@ -63,33 +63,40 @@ def commit_to_github(mapping_json_str):
     else:
         st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
+
 def main():
-    st.write("DEBUG: st.secrets:", st.secrets)  # デバッグ表示
+    # デバッグ表示は不要なら削除してOK
+    # st.write("DEBUG: st.secrets:", st.secrets)
 
     st.title("内部リンク マッピング管理ツール")
     st.write("キーワードとURLを追加・編集し、[保存]ボタンでローカルJSONへ書き込み→GitHubへコミットします。")
 
+    # ローカルファイルをロード
     link_mapping = load_link_mapping()
 
     if not link_mapping:
         st.info("まだマッピングがありません。フォームから追加してください。")
 
     # 既存項目の表示・編集・削除
+    # キーワードkwとURLurlを編集できるようにし、「削除」ボタンも配置
     for kw, url in list(link_mapping.items()):
         col1, col2, col3 = st.columns([3, 5, 1])
-        with col1:
-            new_kw = st.text_input("キーワード", value=kw, key=f"kw_{kw}")
-        with col2:
-            new_url = st.text_input("URL", value=url, key=f"url_{kw}")
-        with col3:
-            if st.button("削除", key=f"delete_{kw}"):
-                del link_mapping[kw]
-                # ▼ 削除したらすぐローカル保存し、再起動
-                save_link_mapping_locally(link_mapping)
-                st.success(f"削除しました: {kw}")
-                st.rerun()
 
-        # キーワードやURLを編集した場合
+        # 入力欄（stripで前後空白除去しておくと混乱を防ぎやすい）
+        new_kw = col1.text_input("キーワード", value=kw, key=f"kw_{kw}").strip()
+        new_url = col2.text_input("URL", value=url, key=f"url_{kw}").strip()
+
+        # 削除ボタン
+        if col3.button("削除", key=f"delete_{kw}"):
+            # link_mapping から完全削除
+            del link_mapping[kw]
+            # ローカルファイル保存 → 再描画
+            save_link_mapping_locally(link_mapping)
+            st.success(f"削除しました: {kw}")
+            st.rerun()
+
+        # キーワードやURLが変更されたかどうかを検知
+        # キーが変わった場合は一旦削除＋新規キーを追加
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
@@ -98,22 +105,23 @@ def main():
 
     # 新規追加フォーム
     st.subheader("新規追加")
-    new_kw = st.text_input("新しいキーワード", key="new_kw")
-    new_url = st.text_input("新しいURL", key="new_url")
+    input_kw = st.text_input("新しいキーワード", key="new_kw").strip()
+    input_url = st.text_input("新しいURL", key="new_url").strip()
 
+    # 追加ボタン
     if st.button("追加"):
-        if new_kw and new_url:
-            link_mapping[new_kw] = new_url
-            # ▼ 追加したらローカル保存し、再起動
+        if input_kw and input_url:
+            link_mapping[input_kw] = input_url
+            # ローカル保存 → 再描画
             save_link_mapping_locally(link_mapping)
-            st.success(f"追加しました: {new_kw} => {new_url}")
+            st.success(f"追加しました: {input_kw} => {input_url}")
             st.rerun()
         else:
             st.warning("キーワードとURLを両方入力してください。")
 
-    # 保存ボタン → GitHubへコミット
+    # 保存ボタン (最終的にGitHubへコミット)
     if st.button("保存"):
-        # 1. 改めてローカルファイルを保存 (編集漏れがあれば反映)
+        # 1. ローカルファイルを更新
         save_link_mapping_locally(link_mapping)
         st.success("ローカルJSONファイルを更新しました")
 
