@@ -66,6 +66,10 @@ def commit_to_github(mapping_json_str):
         st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
 def main():
+    # デバッグ用: Secretsの中身を一時的に表示（あとで削除）
+    st.write("DEBUG: st.secrets:", st.secrets)
+
+    # タイトル＆説明は1回だけにする
     st.title("内部リンク マッピング管理ツール")
     st.write("キーワードとURLを追加・編集し、[保存]ボタンでローカルJSONへ書き込み、GitHubへコミットします。")
 
