@@ -17,22 +17,33 @@ def get_post_content(post_id, wp_url, wp_username, wp_password):
 
 def insert_links_to_content(content, link_mapping, max_links_per_post=1):
     links_added = 0
-    
+
     for keyword, url in link_mapping.items():
         if links_added >= max_links_per_post:
             break
 
-        pattern = rf'(?<!<a[^>]*>)(?P<kw>{re.escape(keyword)})(?![^<]*<\/a>)'
+        # <a>タグで囲まれた部分とキーワードをまとめて捕捉
+        pattern = rf'(<a[^>]*>.*?</a>|{re.escape(keyword)})'
 
         def replacement(match):
             nonlocal links_added
+            text = match.group(0)
+
+            # 既に <a ...> で始まる場合は既存リンクなのでそのまま返す
+            if text.startswith('<a'):
+                return text
+
+            # それ以外はキーワードだけがマッチした場合なので、リンクを付与
             if links_added < max_links_per_post:
                 links_added += 1
-                return f'<a href="{url}">{match.group("kw")}</a>'
+                return f'<a href="{url}">{text}</a>'
             else:
-                return match.group("kw")
+                return text
 
+        # 1回だけ置換してテキストを更新
         updated_content = re.sub(pattern, replacement, content, count=1)
+
+        # 実際にリンクを1つ追加できたらbreakする
         if links_added > 0:
             return updated_content
 
