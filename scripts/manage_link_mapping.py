@@ -1,5 +1,3 @@
-# scripts/manage_link_mapping.py
-
 import streamlit as st
 import json
 import os
@@ -14,7 +12,6 @@ def load_link_mapping(path=JSON_PATH):
 
 def save_link_mapping(mapping, path=JSON_PATH):
     with open(path, 'w', encoding='utf-8') as f:
-        # ensure_ascii=False で日本語をそのまま保存
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 def main():
@@ -23,7 +20,6 @@ def main():
 
     link_mapping = load_link_mapping()
 
-    # テーブル形式で一覧表示
     if not link_mapping:
         st.info("現在マッピングは空です。フォームから新規追加してください。")
 
@@ -36,25 +32,24 @@ def main():
         with col3:
             if st.button("削除", key=f"delete_{kw}"):
                 del link_mapping[kw]
-                st.experimental_rerun()
+                st.rerun()  # ← ここでも再描画を行いたい場合
 
-        # キーワード or URL が変更された場合の対応
         if new_kw != kw:
-            # キー名が変わったとき
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
         elif new_url != url:
-            # URLだけ変わったとき
             link_mapping[kw] = new_url
 
     st.subheader("新規追加")
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
+
     if st.button("追加"):
         if new_kw and new_url:
             link_mapping[new_kw] = new_url
             st.success(f"追加しました: {new_kw} => {new_url}")
-            st.experimental_rerun()
+            # st.experimental_rerun() → st.rerun() へ変更
+            st.rerun()
         else:
             st.warning("キーワードとURLを入力してください。")
 
