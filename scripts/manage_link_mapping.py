@@ -1,4 +1,5 @@
-# manage_link_mapping.py
+# scripts/manage_link_mapping.py
+
 import streamlit as st
 import json
 import os
@@ -13,18 +14,18 @@ def load_link_mapping(path=JSON_PATH):
 
 def save_link_mapping(mapping, path=JSON_PATH):
     with open(path, 'w', encoding='utf-8') as f:
+        # ensure_ascii=False で日本語をそのまま保存
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 def main():
     st.title("内部リンク マッピング管理ツール")
-
     st.write("キーワードとリンク先URLを追加・編集して、[保存]ボタンでJSONに書き込みます。")
 
     link_mapping = load_link_mapping()
 
     # テーブル形式で一覧表示
     if not link_mapping:
-        st.info("現在、マッピングは空です。下のフォームから新規追加してください。")
+        st.info("現在マッピングは空です。フォームから新規追加してください。")
 
     for kw, url in list(link_mapping.items()):
         col1, col2, col3 = st.columns([3, 5, 1])
@@ -37,27 +38,29 @@ def main():
                 del link_mapping[kw]
                 st.experimental_rerun()
 
-        # キーが変更された場合（kwが書き換わった）→古いキーを消して新しいキーを追加
+        # キーワード or URL が変更された場合の対応
         if new_kw != kw:
+            # キー名が変わったとき
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
         elif new_url != url:
+            # URLだけ変わったとき
             link_mapping[kw] = new_url
 
     st.subheader("新規追加")
-    new_keyword = st.text_input("新しいキーワードを入力", key="new_keyword")
-    new_url = st.text_input("新しいURLを入力", key="new_url")
+    new_kw = st.text_input("新しいキーワード", key="new_kw")
+    new_url = st.text_input("新しいURL", key="new_url")
     if st.button("追加"):
-        if new_keyword and new_url:
-            link_mapping[new_keyword] = new_url
-            st.success(f"追加しました: {new_keyword} => {new_url}")
+        if new_kw and new_url:
+            link_mapping[new_kw] = new_url
+            st.success(f"追加しました: {new_kw} => {new_url}")
             st.experimental_rerun()
         else:
-            st.warning("キーワードとURLを両方入力してください。")
+            st.warning("キーワードとURLを入力してください。")
 
     if st.button("保存"):
         save_link_mapping(link_mapping)
-        st.success("JSONファイルに保存しました。GitHubにコミットしてください。")
+        st.success("JSONファイルに保存しました。GitHubへコミットしてください。")
 
 if __name__ == "__main__":
     main()
