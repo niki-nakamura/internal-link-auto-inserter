@@ -95,13 +95,17 @@ def main():
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
 
-    if st.button("追加"):
-        if new_kw and new_url:
-            link_mapping[new_kw] = new_url
-            st.success(f"追加しました: {new_kw} => {new_url}")
-            st.rerun()  # 修正済み
-        else:
-            st.warning("キーワードとURLを両方入力してください。")
+if st.button("追加"):
+    if new_kw and new_url:
+        link_mapping[new_kw] = new_url
+        
+        # ここでローカルJSONへ即時保存し、次のリロードでも新データを読み込むようにする
+        save_link_mapping_locally(link_mapping)
+        
+        st.success(f"追加しました: {new_kw} => {new_url}")
+        st.rerun()
+    else:
+        st.warning("キーワードとURLを両方入力してください。")
 
     # 保存ボタン
     if st.button("保存"):
