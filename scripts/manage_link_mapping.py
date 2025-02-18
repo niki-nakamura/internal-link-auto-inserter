@@ -84,6 +84,7 @@ def main():
         with col3:
             if st.button("削除", key=f"delete_{kw}"):
                 del link_mapping[kw]
+                # ▼ 修正箇所: experimental_rerun → rerun
                 st.rerun()
 
         # キーワードやURLが変更されたときの処理
@@ -102,6 +103,7 @@ def main():
         if new_kw and new_url:
             link_mapping[new_kw] = new_url
             st.success(f"追加しました: {new_kw} => {new_url}")
+            # ▼ 修正箇所: experimental_rerun → rerun
             st.rerun()
         else:
             st.warning("キーワードとURLを両方入力してください。")
