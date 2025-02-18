@@ -6,12 +6,11 @@ import requests
 
 JSON_PATH = 'data/linkMapping.json'
 
-# ★★ 以下を自分のリポジトリ情報に合わせて書き換えてください ★★
+# リポジトリ情報(ユーザー名・リポ名・対象ファイル・ブランチ)
 GITHUB_REPO_OWNER = "niki-nakamura"
 GITHUB_REPO_NAME = "internal-link-auto-inserter"
 FILE_PATH = "data/linkMapping.json"
-BRANCH = "main"  # メインブランチ名
-# ↑ 例示用。実際には「devブランチ」等でもOK
+BRANCH = "main"  # 通常"main"
 
 def load_link_mapping(path=JSON_PATH):
     if not os.path.exists(path):
@@ -26,14 +25,16 @@ def save_link_mapping_locally(mapping, path=JSON_PATH):
 def commit_to_github(mapping_json_str):
     """
     GitHubの contents API を使って data/linkMapping.json を更新する。
-    secrets["GITHUB_TOKEN"] に PAT を入れておく。
+    st.secrets["GITHUB_TOKEN"] に PATを入れておく(Contents Write権限必須)。
     """
-    token = st.secrets["GITHUB_TOKEN"]  # Streamlit CloudのSecretsにPATを保存
-    if not token:
-        st.error("GITHUB_TOKEN が設定されていません。")
+    # もし "GITHUB_TOKEN" が設定されていない場合はKeyErrorになるのでtry～exceptする
+    try:
+        token = st.secrets["GITHUB_TOKEN"]
+    except KeyError:
+        st.error("[ERROR] GITHUB_TOKEN がStreamlit Secretsに設定されていません。")
         return
 
-    # 1. 既存ファイルのSHAを取得
+    # GETで現在のファイルSHAを取得
     url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/contents/{FILE_PATH}?ref={BRANCH}"
     headers = {
         "Authorization": f"token {token}",
@@ -43,39 +44,37 @@ def commit_to_github(mapping_json_str):
     if get_res.status_code == 200:
         sha = get_res.json().get("sha")
     elif get_res.status_code == 404:
-        sha = None
+        sha = None  # ファイルが存在しない
     else:
-        st.error(f"Error fetching file from GitHub: {get_res.text}")
+        st.error(f"[ERROR] Fetching file from GitHub: {get_res.status_code}, {get_res.text}")
         return
 
-    # 2. PUTで更新
-    #   mapping_json_strをBase64エンコード
+    # PUT で更新（Base64エンコードしたcontent）
     content_b64 = base64.b64encode(mapping_json_str.encode("utf-8")).decode("utf-8")
-
-    data = {
+    put_data = {
         "message": "Update linkMapping.json from Streamlit",
         "content": content_b64,
         "branch": BRANCH
     }
     if sha:
-        data["sha"] = sha
+        put_data["sha"] = sha
 
-    put_res = requests.put(url, headers=headers, json=data)
+    put_res = requests.put(url, headers=headers, json=put_data)
     if put_res.status_code in [200, 201]:
         st.success("GitHubへのコミットに成功しました！")
     else:
-        st.error(f"GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
+        st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
 def main():
     st.title("内部リンク マッピング管理ツール")
-    st.write("キーワードとリンク先URLを追加・編集して、[保存]ボタンでJSONに書き込み、さらにGitHubにもコミットします。")
+    st.write("キーワードとURLを追加・編集し、[保存]ボタンでローカルJSONへ書き込み、GitHubへコミットします。")
 
     link_mapping = load_link_mapping()
 
     if not link_mapping:
-        st.info("現在マッピングは空です。フォームから新規追加してください。")
+        st.info("まだマッピングがありません。フォームから追加してください。")
 
-    # 既存項目の表示・編集・削除
+    # 既存の項目表示・編集・削除
     for kw, url in list(link_mapping.items()):
         col1, col2, col3 = st.columns([3, 5, 1])
         with col1:
@@ -87,6 +86,7 @@ def main():
                 del link_mapping[kw]
                 st.rerun()
 
+        # キーワードやURLが変更されたときの処理
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
@@ -97,24 +97,22 @@ def main():
     st.subheader("新規追加")
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
+
     if st.button("追加"):
         if new_kw and new_url:
             link_mapping[new_kw] = new_url
             st.success(f"追加しました: {new_kw} => {new_url}")
             st.rerun()
         else:
-            st.warning("キーワードとURLを入力してください。")
+            st.warning("キーワードとURLを両方入力してください。")
 
-    if st.button("保存 (ローカルのみ)"):
-        # ローカルへの書き込み
+    # 保存ボタン（ローカル書き込み→GitHubコミット）
+    if st.button("保存"):
+        # 1. ローカル保存
         save_link_mapping_locally(link_mapping)
-        st.success("JSONファイルにローカル保存しました。")
+        st.success("ローカルJSONファイル更新OK")
 
-    # GitHubコミット用ボタン
-    if st.button("保存 & GitHubに反映"):
-        # ローカル書き込み
-        save_link_mapping_locally(link_mapping)
-        # GitHubコミット
+        # 2. GitHubコミット
         mapping_json_str = json.dumps(link_mapping, ensure_ascii=False, indent=2)
         commit_to_github(mapping_json_str)
 
