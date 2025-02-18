@@ -23,7 +23,7 @@ def save_link_mapping_locally(mapping, path=JSON_PATH):
 
 def commit_to_github(mapping_json_str):
     """GitHubの contents API を使って data/linkMapping.json を更新する。
-       st.secrets["GITHUB_TOKEN"] にPATを入れておく(Contents Write権限必須)。"""
+       st.secrets["secrets"]["GITHUB_TOKEN"] にPATを入れておく(Contents Write権限必須)。"""
     try:
         token = st.secrets["secrets"]["GITHUB_TOKEN"]
     except KeyError:
@@ -81,9 +81,9 @@ def main():
         with col3:
             if st.button("削除", key=f"delete_{kw}"):
                 del link_mapping[kw]
-                st.rerun()  # 修正済み
+                st.rerun()
 
-        # キーワード/URLが変更されたら、マッピングを更新
+        # キーワード/URLが変更されたら更新
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
@@ -95,23 +95,23 @@ def main():
     new_kw = st.text_input("新しいキーワード", key="new_kw")
     new_url = st.text_input("新しいURL", key="new_url")
 
-if st.button("追加"):
-    if new_kw and new_url:
-        link_mapping[new_kw] = new_url
-        
-        # ここでローカルJSONへ即時保存し、次のリロードでも新データを読み込むようにする
-        save_link_mapping_locally(link_mapping)
-        
-        st.success(f"追加しました: {new_kw} => {new_url}")
-        st.rerun()
-    else:
-        st.warning("キーワードとURLを両方入力してください。")
+    if st.button("追加"):
+        if new_kw and new_url:
+            link_mapping[new_kw] = new_url
+            # ▼ 「追加」を押した段階でローカルファイルにも書き込み、再実行後も残るようにする
+            save_link_mapping_locally(link_mapping)
+            st.success(f"追加しました: {new_kw} => {new_url}")
+            st.rerun()
+        else:
+            st.warning("キーワードとURLを両方入力してください。")
 
     # 保存ボタン
     if st.button("保存"):
+        # 1. 改めてローカル保存 (何か変更があれば反映)
         save_link_mapping_locally(link_mapping)
         st.success("ローカルJSONファイルを更新しました")
 
+        # 2. GitHubコミット
         mapping_json_str = json.dumps(link_mapping, ensure_ascii=False, indent=2)
         commit_to_github(mapping_json_str)
 
