@@ -1,21 +1,13 @@
 name: "Crawl Links"
 
-on:
-  # 手動実行
-  workflow_dispatch:
-  # 定期実行するならコメントアウト外す
-  # schedule:
-  #   - cron: '0 3 * * *'  # 毎日3時に実行など
-
-name: "Crawl Links"
-
-# ここに追加
+# ★ リポジトリへの push を行うには contents: write が必要
 permissions:
   contents: write
 
 on:
   workflow_dispatch:
-  # ...
+  # schedule:  # 必要なら cron で定期実行
+  #   - cron: '0 3 * * *'
 
 jobs:
   run-crawl:
@@ -38,7 +30,6 @@ jobs:
           python scripts/crawl_links.py
 
       - name: Commit articles.json changes
-        # 取得結果で articles.json に更新があった場合のみコミット
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
