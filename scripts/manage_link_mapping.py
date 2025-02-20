@@ -264,7 +264,7 @@ def link_mapping_management():
             st.warning("カテゴリー名を入力してください。")
 
     # GitHubコミット
-    if st.button("保存をGitHubへ (linkMapping.json)"):
+    if st.button("保存（追加したら必ず押す!）"):
         save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
         st.success("ローカルファイル(linkMapping.json)更新完了")
         mapping_json_str = json.dumps(link_mapping_data, ensure_ascii=False, indent=2)
