@@ -9,7 +9,7 @@ import requests
 # ===================================
 LINK_MAPPING_JSON_PATH = 'data/linkMapping.json'
 LINK_USAGE_JSON_PATH = 'data/linkUsage.json'
-ARTICLES_JSON_PATH = 'data/articles.json'  # ← 新規追加
+ARTICLES_JSON_PATH = 'data/articles.json'  # WordPressから取得した記事を保存する
 
 GITHUB_REPO_OWNER = "niki-nakamura"
 GITHUB_REPO_NAME = "internal-link-auto-inserter"
@@ -29,7 +29,6 @@ def load_json(path: str):
     """JSONファイルを読み込む。存在しなければ空の構造を返す。"""
     if not os.path.exists(path):
         # articles.json はリスト想定、linkMapping/linkUsage はdict想定
-        # ここでは区別せず、単に空のリスト or dict を返すシンプル実装
         if "articles" in path:
             return []
         else:
@@ -146,7 +145,7 @@ def extract_column_articles(posts):
         # column URL判定: "https://good-apps.jp/media/column/" を含むかどうか
         if "/media/column/" in link:
             article_list.append({
-                "id": p["id"],
+                "id": str(p["id"]),  # linkUsage.jsonとの整合性を取りやすいようstr化
                 "title": p["title"]["rendered"],
                 "url": link
             })
@@ -157,11 +156,11 @@ def extract_column_articles(posts):
 # UI: リンクマッピング管理
 # ===================================
 def link_mapping_management():
-    st.subheader("リンクマッピングの管理 (linkMapping.json)")
-
+    st.subheader("リンクマッピング管理 (linkMapping.json)")
     link_mapping = load_json(LINK_MAPPING_JSON_PATH)
+
     if not link_mapping:
-        st.info("まだリンクマッピングがありません。下記フォームから追加してください。")
+        st.info("まだリンクマッピングがありません。フォームから追加してください。")
 
     # 既存表示
     for kw, url in list(link_mapping.items()):
@@ -176,7 +175,7 @@ def link_mapping_management():
             st.success(f"削除しました: {kw}")
             st.experimental_rerun()
 
-        # 更新チェック
+        # キー変更 or URL変更を反映
         if new_kw != kw:
             del link_mapping[kw]
             link_mapping[new_kw] = new_url
@@ -187,15 +186,16 @@ def link_mapping_management():
     st.write("### 新規キーワード追加")
     input_kw = st.text_input("新しいキーワード").strip()
     input_url = st.text_input("新しいURL").strip()
-    if st.button("追加"):
+    if st.button("追加 (キーワード→URL)"):
         if input_kw and input_url:
             link_mapping[input_kw] = input_url
             save_json_locally(link_mapping, LINK_MAPPING_JSON_PATH)
             st.success(f"追加しました: {input_kw} => {input_url}")
             st.experimental_rerun()
         else:
-            st.warning("キーワードとURLを両方入力してください。")
+            st.warning("キーワードとURLの両方を入力してください。")
 
+    # GitHubコミット
     if st.button("保存をGitHubへ (linkMapping.json)"):
         save_json_locally(link_mapping, LINK_MAPPING_JSON_PATH)
         st.success("ローカルファイル(linkMapping.json)更新完了")
@@ -209,7 +209,6 @@ def link_mapping_management():
 # ===================================
 def link_usage_view():
     st.subheader("リンク使用状況 (linkUsage.json)")
-
     link_usage = load_json(LINK_USAGE_JSON_PATH)
     if not link_usage:
         st.info("まだ使用状況が記録されていません。")
@@ -226,12 +225,12 @@ def link_usage_view():
             total_inserts = sum(articles_dict.values())
             st.write(f"- 合計挿入回数: {total_inserts}")
             with st.expander("使用内訳を表示"):
-                for article_key, count in articles_dict.items():
-                    st.write(f"  - {article_key}: {count}回 挿入")
+                for article_id, count in articles_dict.items():
+                    st.write(f"  - 記事ID: {article_id} → {count}回 挿入")
         else:
             st.write("- まだ使用記録がありません。")
 
-    # 必要ならコミットボタン
+    # GitHubコミット
     if st.button("使用状況をGitHubへコミット"):
         usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
         commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Update linkUsage.json from Streamlit")
@@ -239,14 +238,11 @@ def link_usage_view():
 
 # ===================================
 # UI: WordPress記事一覧管理
-#   - WP REST APIから取得 → articles.json保存
-#   - 既存articles.jsonの表示
 # ===================================
 def articles_management():
     st.subheader("WordPress 記事一覧管理 (articles.json)")
+    articles_data = load_json(ARTICLES_JSON_PATH)
 
-    # 1) 既存データの表示
-    articles_data = load_json(ARTICLES_JSON_PATH)  # listを想定
     st.write(f"現在の登録件数: {len(articles_data)}")
     if articles_data:
         with st.expander("登録済み記事リストを表示"):
@@ -255,41 +251,113 @@ def articles_management():
 
     st.write("---")
     st.write("### WordPress REST APIから記事を取得")
-
-    # APIエンドポイント。標準投稿の場合は "/wp-json/wp/v2/posts"。
-    # サイトの構成によっては "/wp-json/wp/v2/column" など別の場合もあるので要調整
     base_api_url = st.text_input("WP REST APIエンドポイントURL", value="https://good-apps.jp/media/wp-json/wp/v2/posts")
 
     if st.button("記事を取得 (REST API)"):
         with st.spinner("記事を取得中..."):
             all_posts = fetch_all_wp_posts(base_api_url, per_page=50, max_pages=50)
-            # URLに "/media/column/" が含まれる投稿だけ抽出
             column_posts = extract_column_articles(all_posts)
             st.info(f"API取得: {len(all_posts)}件中、'/media/column/' を含む投稿 {len(column_posts)}件")
 
-            # 重複チェックをしながら articles.json にマージしたい場合がある
-            # ここでは簡単に「取り直し・上書き」する例とする
-            # （運用によっては既存データとの付き合わせなど行ってもよい）
+            # 既存データとのマージロジックなどは任意で拡張可
+            # 今回は上書き保存
             articles_data = column_posts
-
-            # 保存
             save_json_locally(articles_data, ARTICLES_JSON_PATH)
             st.success(f"articles.json に {len(articles_data)} 件のデータを保存しました。")
             st.experimental_rerun()
 
-    # コミットボタン
     if st.button("articles.json をGitHubへコミット"):
         art_str = json.dumps(articles_data, ensure_ascii=False, indent=2)
         commit_to_github(art_str, ARTICLES_FILE_PATH, "Update articles.json from WP REST API")
 
 
 # ===================================
+# UI: 記事別リンク管理
+#   記事ごとに「どのキーワードを挿入するか？」をチェックボックスで設定
+#   linkUsage.json に反映
+# ===================================
+def article_based_link_management():
+    st.subheader("記事別リンク管理")
+
+    # データ読み込み
+    link_mapping = load_json(LINK_MAPPING_JSON_PATH)  # {kw: url}
+    link_usage = load_json(LINK_USAGE_JSON_PATH)      # {kw: {"url":..., "articles_used_in":{...}}}
+    articles_data = load_json(ARTICLES_JSON_PATH)     # [{"id":"...", "title":"...", "url":"..."}]
+
+    if not articles_data:
+        st.warning("articles.json が空です。先に[WordPress記事一覧管理]タブで記事を取得してください。")
+        return
+
+    # 記事選択用のセレクトボックス
+    # 表示は 「ID | タイトル」形式
+    article_disp_list = [f"{a['id']} | {a['title']}" for a in articles_data]
+    selected_item = st.selectbox("記事を選択", article_disp_list)
+    selected_index = article_disp_list.index(selected_item)
+    selected_article = articles_data[selected_index]
+    selected_article_id = selected_article["id"]
+
+    st.markdown(f"**選択中の記事:** ID={selected_article_id}, タイトル={selected_article['title']}")
+    st.write("---")
+
+    if not link_mapping:
+        st.warning("linkMapping.json が空です。先に[リンクマッピング管理]タブでキーワードを追加してください。")
+        return
+
+    changes_made = False
+
+    # キーワードごとにチェックボックスを設置
+    for kw, url in link_mapping.items():
+        # linkUsage に未登録の場合は初期化
+        if kw not in link_usage:
+            link_usage[kw] = {
+                "url": url,
+                "articles_used_in": {}
+            }
+        usage_info = link_usage[kw]
+        articles_used_in = usage_info.setdefault("articles_used_in", {})
+
+        # 現在の挿入回数 (0なら未挿入)
+        current_count = articles_used_in.get(selected_article_id, 0)
+        is_checked = (current_count > 0)
+
+        new_checked = st.checkbox(f"【{kw}】にリンクを挿入", value=is_checked)
+        if new_checked != is_checked:
+            changes_made = True
+            if new_checked:
+                # ONになった → 初期値1回としてセット
+                articles_used_in[selected_article_id] = 1
+            else:
+                # OFFになった → 削除
+                if selected_article_id in articles_used_in:
+                    del articles_used_in[selected_article_id]
+
+    if changes_made:
+        st.warning("変更がありました。下記ボタンで保存してください。")
+
+    if st.button("保存 (この記事のリンクON/OFF設定)"):
+        # 保存
+        save_json_locally(link_usage, LINK_USAGE_JSON_PATH)
+        st.success("linkUsage.json を更新しました。")
+
+        # コミットするかどうか
+        if st.checkbox("linkUsage.jsonをGitHubへコミットする"):
+            usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
+            commit_to_github(usage_str, LINK_USAGE_FILE_PATH, f"Update linkUsage.json for article {selected_article_id}")
+
+
+# ===================================
 # メインアプリ
 # ===================================
 def main():
-    st.title("内部リンク マッピング管理ツール")
+    st.title("内部リンク管理ツール")
 
-    tabs = st.tabs(["リンクマッピング管理", "リンク使用状況", "WordPress記事一覧管理"])
+    # 4つのタブに分割
+    tabs = st.tabs([
+        "リンクマッピング管理",
+        "リンク使用状況の確認",
+        "WordPress記事一覧管理",
+        "記事別リンク管理"
+    ])
     
     with tabs[0]:
         link_mapping_management()
@@ -299,6 +367,9 @@ def main():
 
     with tabs[2]:
         articles_management()
+
+    with tabs[3]:
+        article_based_link_management()
 
 
 if __name__ == "__main__":
