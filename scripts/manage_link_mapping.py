@@ -14,13 +14,10 @@ ARTICLES_JSON_PATH = 'data/articles.json'  # WordPressから取得した記事�
 GITHUB_REPO_OWNER = "niki-nakamura"
 GITHUB_REPO_NAME = "internal-link-auto-inserter"
 
-# GitHub上でのファイルパス
 LINK_MAPPING_FILE_PATH = "data/linkMapping.json"
 LINK_USAGE_FILE_PATH = "data/linkUsage.json"
 ARTICLES_FILE_PATH = "data/articles.json"
-
 BRANCH = "main"
-
 
 # ===================================
 # ユーティリティ関数
@@ -28,7 +25,6 @@ BRANCH = "main"
 def load_json(path: str):
     """JSONファイルを読み込む。存在しなければ空の構造を返す。"""
     if not os.path.exists(path):
-        # articles.json はリスト想定、linkMapping/linkUsage はdict想定
         if "articles" in path:
             return []
         else:
@@ -67,7 +63,6 @@ def commit_to_github(json_str: str, target_file_path: str, commit_message: str):
         st.error(f"[ERROR] Fetching file from GitHub: {get_res.status_code}, {get_res.text}")
         return
 
-    # Base64エンコードしてPUT
     content_b64 = base64.b64encode(json_str.encode("utf-8")).decode("utf-8")
     put_data = {
         "message": commit_message,
@@ -83,25 +78,14 @@ def commit_to_github(json_str: str, target_file_path: str, commit_message: str):
     else:
         st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
-
 # ===================================
 # WordPressから記事を取得する処理
 # ===================================
 def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=50):
-    """
-    WordPressサイトのREST APIを用いて投稿を取得する。
-    - base_url: WP REST APIのエンドポイント（例: "https://good-apps.jp/media/wp-json/wp/v2/posts"）
-    - per_page: 1回に取得する記事数
-    - max_pages: ページングの最大試行回数 (制限 or 異常ループ防止用)
-    戻り値: postsのリスト（各要素はdict）
-    """
     all_posts = []
     page = 1
     while True:
-        params = {
-            "per_page": per_page,
-            "page": page
-        }
+        params = {"per_page": per_page, "page": page}
         res = requests.get(base_url, params=params)
         if res.status_code != 200:
             st.warning(f"記事取得でエラーが発生しました: HTTP {res.status_code}")
@@ -109,19 +93,15 @@ def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=50):
 
         posts = res.json()
         if not isinstance(posts, list) or len(posts) == 0:
-            # データが空 or 配列じゃない場合は終了
             break
 
         all_posts.extend(posts)
 
-        # ページング制御: X-WP-TotalPagesをチェックし、page < total_pages なら続行
         total_pages = res.headers.get("X-WP-TotalPages")
         if total_pages:
             if page >= int(total_pages):
-                # 最終ページに達した
                 break
         else:
-            # total_pages不明だが、取得結果が増えなくなったら終了
             if len(posts) < per_page:
                 break
 
@@ -133,16 +113,9 @@ def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=50):
     return all_posts
 
 def extract_column_articles(posts):
-    """
-    全投稿一覧の中から、URLに `'/media/column/'` を含む記事だけ抽出し、
-    `[{"id": int, "title": str, "url": str}, ...]` のリストを返す。
-    """
     article_list = []
     for p in posts:
         link = p.get("link", "")
-        # WordPressのレスポンスでタイトルは p["title"]["rendered"] に入ることが多い
-        # IDは p["id"]
-        # column URL判定: "https://good-apps.jp/media/column/" を含むかどうか
         if "/media/column/" in link:
             article_list.append({
                 "id": str(p["id"]),  # linkUsage.jsonとの整合性を取りやすいようstr化
@@ -151,61 +124,137 @@ def extract_column_articles(posts):
             })
     return article_list
 
+# ===================================
+# (追加) カテゴリー構造をフラット化するヘルパー関数
+# ===================================
+def flatten_link_mapping(nested_map: dict) -> dict:
+    """
+    { "ゲーム": {"暇つぶしアプリ": "URL1", "カードゲーム": "URL2"},
+      "交通":  {"タクシー": "URL3"},
+      "Uncategorized": {"AIアプリ": "URL4"} }
+    のような構造を
+    { "暇つぶしアプリ": "URL1", "カードゲーム": "URL2", "タクシー": "URL3", "AIアプリ": "URL4" }
+    にまとめて返す。
+    """
+    flat_map = {}
+    for category, kw_dict in nested_map.items():
+        flat_map.update(kw_dict)
+    return flat_map
 
 # ===================================
-# UI: リンクマッピング管理
+# UI: リンクマッピング管理 (カテゴリー対応)
 # ===================================
 def link_mapping_management():
     st.subheader("リンクマッピング管理 (linkMapping.json)")
-    link_mapping = load_json(LINK_MAPPING_JSON_PATH)
 
-    if not link_mapping:
-        st.info("まだリンクマッピングがありません。フォームから追加してください。")
+    link_mapping_data = load_json(LINK_MAPPING_JSON_PATH)
 
-    # 既存表示
-    for kw, url in list(link_mapping.items()):
-        col1, col2, col3 = st.columns([3, 5, 1])
-        new_kw = col1.text_input("キーワード", value=kw, key=f"kw_{kw}").strip()
-        new_url = col2.text_input("URL", value=url, key=f"url_{kw}").strip()
+    # データ構造が「カテゴリーをキーとする辞書」になっていなければ自動変換
+    if link_mapping_data and not all(isinstance(v, dict) for v in link_mapping_data.values()):
+        st.warning("旧来のフラットな linkMapping.json を検出したため、'Uncategorized' に移行しました。")
+        new_structure = {"Uncategorized": link_mapping_data}
+        link_mapping_data = new_structure
+        save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
 
-        # 削除ボタン
-        if col3.button("削除", key=f"delete_{kw}"):
-            del link_mapping[kw]
-            save_json_locally(link_mapping, LINK_MAPPING_JSON_PATH)
-            st.success(f"削除しました: {kw}")
-            st.experimental_rerun()
+    if not link_mapping_data:
+        link_mapping_data = {}
 
-        # キー変更 or URL変更を反映
-        if new_kw != kw:
-            del link_mapping[kw]
-            link_mapping[new_kw] = new_url
-        elif new_url != url:
-            link_mapping[kw] = new_url
+    if not link_mapping_data:
+        st.info("まだカテゴリーがありません。フォームから追加してください。")
+    else:
+        category_list = sorted(link_mapping_data.keys())
+        for category_name in category_list:
+            with st.expander(f"カテゴリー: {category_name}", expanded=False):
+                cat_data = link_mapping_data[category_name]
+
+                # カテゴリー名を変更
+                col_cat1, col_cat2 = st.columns([3, 1])
+                new_category_name = col_cat1.text_input(
+                    "カテゴリー名を変更",
+                    value=category_name,
+                    key=f"cat_{category_name}"
+                ).strip()
+
+                # カテゴリー削除ボタン
+                if col_cat2.button("削除", key=f"delete_cat_{category_name}"):
+                    del link_mapping_data[category_name]
+                    save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
+                    st.success(f"削除しました: カテゴリー {category_name}")
+                    st.experimental_rerun()
+
+                # カテゴリー名変更
+                if new_category_name and new_category_name != category_name:
+                    if new_category_name in link_mapping_data:
+                        st.error(f"カテゴリー名 '{new_category_name}' は既に存在します。")
+                    else:
+                        link_mapping_data[new_category_name] = cat_data
+                        del link_mapping_data[category_name]
+                        category_name = new_category_name
+
+                # キーワード一覧 (cat_dataは {kw: url} )
+                for kw, url in list(cat_data.items()):
+                    c1, c2, c3 = st.columns([3, 5, 1])
+                    new_kw = c1.text_input("キーワード", value=kw, key=f"kw_{category_name}_{kw}").strip()
+                    new_url = c2.text_input("URL", value=url, key=f"url_{category_name}_{kw}").strip()
+
+                    if c3.button("削除", key=f"del_{category_name}_{kw}"):
+                        del cat_data[kw]
+                        save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
+                        st.success(f"削除しました: キーワード {kw} in カテゴリー {category_name}")
+                        st.experimental_rerun()
+
+                    if new_kw != kw:
+                        if new_kw in cat_data:
+                            st.error(f"既に存在するキーワード '{new_kw}' に上書きできません。")
+                        else:
+                            del cat_data[kw]
+                            cat_data[new_kw] = new_url
+                    elif new_url != url:
+                        cat_data[kw] = new_url
+
+                st.write("---")
+                # 新規キーワード追加
+                st.write(f"### 新規キーワード追加 (カテゴリー:{category_name})")
+                add_kw = st.text_input(f"新しいキーワード ({category_name})", key=f"add_kw_{category_name}").strip()
+                add_url = st.text_input(f"新しいURL ({category_name})", key=f"add_url_{category_name}").strip()
+                if st.button(f"追加 (キーワード→URL) to {category_name}", key=f"btn_add_{category_name}"):
+                    if add_kw and add_url:
+                        if add_kw in cat_data:
+                            st.warning(f"既に同じキーワードが存在します: {add_kw}")
+                        else:
+                            cat_data[add_kw] = add_url
+                            save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
+                            st.success(f"追加しました: [{category_name}] {add_kw} => {add_url}")
+                            st.experimental_rerun()
+                    else:
+                        st.warning("キーワードとURLの両方を入力してください。")
 
     st.write("---")
-    st.write("### 新規キーワード追加")
-    input_kw = st.text_input("新しいキーワード").strip()
-    input_url = st.text_input("新しいURL").strip()
-    if st.button("追加 (キーワード→URL)"):
-        if input_kw and input_url:
-            link_mapping[input_kw] = input_url
-            save_json_locally(link_mapping, LINK_MAPPING_JSON_PATH)
-            st.success(f"追加しました: {input_kw} => {input_url}")
-            st.experimental_rerun()
+    # 新規カテゴリー追加
+    st.write("### 新規カテゴリー追加")
+    new_cat_name = st.text_input("カテゴリー名（例: '交通・移動'）").strip()
+    if st.button("カテゴリーを追加"):
+        if new_cat_name:
+            if new_cat_name in link_mapping_data:
+                st.warning(f"既に同名カテゴリーが存在します: {new_cat_name}")
+            else:
+                link_mapping_data[new_cat_name] = {}
+                save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
+                st.success(f"新規カテゴリーを追加しました: {new_cat_name}")
+                st.experimental_rerun()
         else:
-            st.warning("キーワードとURLの両方を入力してください。")
+            st.warning("カテゴリー名を入力してください。")
 
     # GitHubコミット
     if st.button("保存をGitHubへ (linkMapping.json)"):
-        save_json_locally(link_mapping, LINK_MAPPING_JSON_PATH)
+        save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
         st.success("ローカルファイル(linkMapping.json)更新完了")
 
-        mapping_json_str = json.dumps(link_mapping, ensure_ascii=False, indent=2)
-        commit_to_github(mapping_json_str, LINK_MAPPING_FILE_PATH, "Update linkMapping.json from Streamlit")
-
+        mapping_json_str = json.dumps(link_mapping_data, ensure_ascii=False, indent=2)
+        commit_to_github(mapping_json_str, LINK_MAPPING_FILE_PATH, "Update linkMapping.json (with categories) from Streamlit")
 
 # ===================================
-# UI: リンク使用状況の確認
+# UI: リンク使用状況の確認 (既存どおり)
 # ===================================
 def link_usage_view():
     st.subheader("リンク使用状況 (linkUsage.json)")
@@ -237,7 +286,7 @@ def link_usage_view():
 
 
 # ===================================
-# UI: WordPress記事一覧管理
+# UI: WordPress記事一覧管理 (既存どおり)
 # ===================================
 def articles_management():
     st.subheader("WordPress 記事一覧管理 (articles.json)")
@@ -259,8 +308,6 @@ def articles_management():
             column_posts = extract_column_articles(all_posts)
             st.info(f"API取得: {len(all_posts)}件中、'/media/column/' を含む投稿 {len(column_posts)}件")
 
-            # 既存データとのマージロジックなどは任意で拡張可
-            # 今回は上書き保存
             articles_data = column_posts
             save_json_locally(articles_data, ARTICLES_JSON_PATH)
             st.success(f"articles.json に {len(articles_data)} 件のデータを保存しました。")
@@ -273,23 +320,22 @@ def articles_management():
 
 # ===================================
 # UI: 記事別リンク管理
-#   記事ごとに「どのキーワードを挿入するか？」をチェックボックスで設定
-#   linkUsage.json に反映
+#    → カテゴリー構造はフラット化して一括管理
 # ===================================
 def article_based_link_management():
     st.subheader("記事別リンク管理")
 
     # データ読み込み
-    link_mapping = load_json(LINK_MAPPING_JSON_PATH)  # {kw: url}
-    link_usage = load_json(LINK_USAGE_JSON_PATH)      # {kw: {"url":..., "articles_used_in":{...}}}
-    articles_data = load_json(ARTICLES_JSON_PATH)     # [{"id":"...", "title":"...", "url":"..."}]
+    nested_link_mapping = load_json(LINK_MAPPING_JSON_PATH)  # {category: {kw: url}}
+    link_mapping_flat = flatten_link_mapping(nested_link_mapping)  # ← カテゴリを無視して kw: url にまとめる
+    link_usage = load_json(LINK_USAGE_JSON_PATH)
+    articles_data = load_json(ARTICLES_JSON_PATH)
 
     if not articles_data:
         st.warning("articles.json が空です。先に[WordPress記事一覧管理]タブで記事を取得してください。")
         return
 
     # 記事選択用のセレクトボックス
-    # 表示は 「ID | タイトル」形式
     article_disp_list = [f"{a['id']} | {a['title']}" for a in articles_data]
     selected_item = st.selectbox("記事を選択", article_disp_list)
     selected_index = article_disp_list.index(selected_item)
@@ -299,15 +345,14 @@ def article_based_link_management():
     st.markdown(f"**選択中の記事:** ID={selected_article_id}, タイトル={selected_article['title']}")
     st.write("---")
 
-    if not link_mapping:
+    if not link_mapping_flat:
         st.warning("linkMapping.json が空です。先に[リンクマッピング管理]タブでキーワードを追加してください。")
         return
 
     changes_made = False
 
     # キーワードごとにチェックボックスを設置
-    for kw, url in link_mapping.items():
-        # linkUsage に未登録の場合は初期化
+    for kw, url in link_mapping_flat.items():
         if kw not in link_usage:
             link_usage[kw] = {
                 "url": url,
@@ -316,7 +361,6 @@ def article_based_link_management():
         usage_info = link_usage[kw]
         articles_used_in = usage_info.setdefault("articles_used_in", {})
 
-        # 現在の挿入回数 (0なら未挿入)
         current_count = articles_used_in.get(selected_article_id, 0)
         is_checked = (current_count > 0)
 
@@ -324,26 +368,20 @@ def article_based_link_management():
         if new_checked != is_checked:
             changes_made = True
             if new_checked:
-                # ONになった → 初期値1回としてセット
                 articles_used_in[selected_article_id] = 1
             else:
-                # OFFになった → 削除
-                if selected_article_id in articles_used_in:
-                    del articles_used_in[selected_article_id]
+                articles_used_in.pop(selected_article_id, None)
 
     if changes_made:
         st.warning("変更がありました。下記ボタンで保存してください。")
 
     if st.button("保存 (この記事のリンクON/OFF設定)"):
-        # 保存
         save_json_locally(link_usage, LINK_USAGE_JSON_PATH)
         st.success("linkUsage.json を更新しました。")
 
-        # コミットするかどうか
         if st.checkbox("linkUsage.jsonをGitHubへコミットする"):
             usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
             commit_to_github(usage_str, LINK_USAGE_FILE_PATH, f"Update linkUsage.json for article {selected_article_id}")
-
 
 # ===================================
 # メインアプリ
@@ -351,7 +389,6 @@ def article_based_link_management():
 def main():
     st.title("内部リンク管理ツール")
 
-    # 4つのタブに分割
     tabs = st.tabs([
         "リンクマッピング管理",
         "リンク使用状況の確認",
@@ -370,7 +407,6 @@ def main():
 
     with tabs[3]:
         article_based_link_management()
-
 
 if __name__ == "__main__":
     main()
