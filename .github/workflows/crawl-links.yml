@@ -1,12 +1,12 @@
 name: Crawl links
 
-# "workflow_dispatch" を指定することで、GitHub Actions タブから手動実行できます
 on:
+  # 手動実行
   workflow_dispatch:
-
-# あるいはスケジュール実行をしたい場合は、以下のように cron を追加
-# schedule:
-#   - cron: '0 3 * * *'  # 毎日午前3時に定期実行、など
+  
+  # 週1回、月曜午前3時に実行
+  schedule:
+    - cron: '0 3 * * 1'
 
 permissions:
   contents: write   # リポジトリへの書き込み権限を付与
@@ -23,15 +23,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"  # 3.8, 3.10等でもOK
+          python-version: "3.9"  # 必要に応じて 3.8, 3.10等でもOK
 
-      # 3) 必要なライブラリ（requestsなど）をインストール
+      # 3) 必要なライブラリをインストール
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      # 4) scripts/crawl_links.py を実行し、articles.json を更新
+      # 4) scripts/crawl_links.py を実行して articles.json を更新
       - name: Run crawl_links.py
         run: |
           python scripts/crawl_links.py
