@@ -144,30 +144,27 @@ def flatten_link_mapping(nested_map: dict) -> dict:
 # ===================================
 # UI: リンクマッピング管理 (カテゴリー対応)
 # ===================================
+import streamlit as st
+import json
+import os
+import base64
+import requests
+
 def link_mapping_management():
     st.subheader("リンクマッピング管理 (linkMapping.json)")
 
     link_mapping_data = load_json(LINK_MAPPING_JSON_PATH)
-
-    # データ構造が「カテゴリーをキーとする辞書」になっていなければ自動変換
-    if link_mapping_data and not all(isinstance(v, dict) for v in link_mapping_data.values()):
-        st.warning("旧来のフラットな linkMapping.json を検出したため、'Uncategorized' に移行しました。")
-        new_structure = {"Uncategorized": link_mapping_data}
-        link_mapping_data = new_structure
-        save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
-
-    if not link_mapping_data:
-        link_mapping_data = {}
+    # --- (中略) ---
 
     if not link_mapping_data:
         st.info("まだカテゴリーがありません。フォームから追加してください。")
     else:
+        # カテゴリーごとの表示
         category_list = sorted(link_mapping_data.keys())
         for category_name in category_list:
             with st.expander(f"カテゴリー: {category_name}", expanded=False):
                 cat_data = link_mapping_data[category_name]
 
-                # カテゴリー名を変更
                 col_cat1, col_cat2 = st.columns([3, 1])
                 new_category_name = col_cat1.text_input(
                     "カテゴリー名を変更",
@@ -175,14 +172,16 @@ def link_mapping_management():
                     key=f"cat_{category_name}"
                 ).strip()
 
-                # カテゴリー削除ボタン
                 if col_cat2.button("削除", key=f"delete_cat_{category_name}"):
                     del link_mapping_data[category_name]
                     save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
                     st.success(f"削除しました: カテゴリー {category_name}")
-                    st.experimental_rerun()
+                    # ★ ここで rerun していた → 削除
+                    # st.experimental_rerun()
+                    st.info("ページを再読み込みすると反映されます。")
+                    return
 
-                # カテゴリー名変更
+                # カテゴリー名が変更されたら反映
                 if new_category_name and new_category_name != category_name:
                     if new_category_name in link_mapping_data:
                         st.error(f"カテゴリー名 '{new_category_name}' は既に存在します。")
@@ -191,17 +190,27 @@ def link_mapping_management():
                         del link_mapping_data[category_name]
                         category_name = new_category_name
 
-                # キーワード一覧 (cat_dataは {kw: url} )
+                # キーワード一覧
                 for kw, url in list(cat_data.items()):
                     c1, c2, c3 = st.columns([3, 5, 1])
-                    new_kw = c1.text_input("キーワード", value=kw, key=f"kw_{category_name}_{kw}").strip()
-                    new_url = c2.text_input("URL", value=url, key=f"url_{category_name}_{kw}").strip()
+                    new_kw = c1.text_input(
+                        "キーワード",
+                        value=kw,
+                        key=f"kw_{category_name}_{kw}"
+                    ).strip()
+                    new_url = c2.text_input(
+                        "URL",
+                        value=url,
+                        key=f"url_{category_name}_{kw}"
+                    ).strip()
 
                     if c3.button("削除", key=f"del_{category_name}_{kw}"):
                         del cat_data[kw]
                         save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
                         st.success(f"削除しました: キーワード {kw} in カテゴリー {category_name}")
-                        st.experimental_rerun()
+                        # st.experimental_rerun() → 削除
+                        st.info("ページを再読み込みすると反映されます。")
+                        return
 
                     if new_kw != kw:
                         if new_kw in cat_data:
@@ -215,8 +224,14 @@ def link_mapping_management():
                 st.write("---")
                 # 新規キーワード追加
                 st.write(f"### 新規キーワード追加 (カテゴリー:{category_name})")
-                add_kw = st.text_input(f"新しいキーワード ({category_name})", key=f"add_kw_{category_name}").strip()
-                add_url = st.text_input(f"新しいURL ({category_name})", key=f"add_url_{category_name}").strip()
+                add_kw = st.text_input(
+                    f"新しいキーワード ({category_name})",
+                    key=f"add_kw_{category_name}"
+                ).strip()
+                add_url = st.text_input(
+                    f"新しいURL ({category_name})",
+                    key=f"add_url_{category_name}"
+                ).strip()
                 if st.button(f"追加 (キーワード→URL) to {category_name}", key=f"btn_add_{category_name}"):
                     if add_kw and add_url:
                         if add_kw in cat_data:
@@ -225,7 +240,9 @@ def link_mapping_management():
                             cat_data[add_kw] = add_url
                             save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
                             st.success(f"追加しました: [{category_name}] {add_kw} => {add_url}")
-                            st.experimental_rerun()
+                            # st.experimental_rerun() → 削除
+                            st.info("ページを再読み込みすると反映されます。")
+                            return
                     else:
                         st.warning("キーワードとURLの両方を入力してください。")
 
@@ -241,17 +258,19 @@ def link_mapping_management():
                 link_mapping_data[new_cat_name] = {}
                 save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
                 st.success(f"新規カテゴリーを追加しました: {new_cat_name}")
-                st.experimental_rerun()
+                # st.experimental_rerun() → 削除
+                st.info("ページを再読み込みすると反映されます。")
+                return
         else:
             st.warning("カテゴリー名を入力してください。")
 
-    # GitHubコミット
     if st.button("保存をGitHubへ (linkMapping.json)"):
         save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
         st.success("ローカルファイル(linkMapping.json)更新完了")
 
         mapping_json_str = json.dumps(link_mapping_data, ensure_ascii=False, indent=2)
-        commit_to_github(mapping_json_str, LINK_MAPPING_FILE_PATH, "Update linkMapping.json (with categories) from Streamlit")
+        commit_to_github(mapping_json_str, LINK_MAPPING_FILE_PATH,
+                         "Update linkMapping.json (with categories) from Streamlit")
 
 # ===================================
 # UI: リンク使用状況の確認 (既存どおり)
