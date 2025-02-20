@@ -7,6 +7,16 @@ on:
   # schedule:
   #   - cron: '0 3 * * *'  # 毎日3時に実行など
 
+name: "Crawl Links"
+
+# ここに追加
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  # ...
+
 jobs:
   run-crawl:
     runs-on: ubuntu-latest
