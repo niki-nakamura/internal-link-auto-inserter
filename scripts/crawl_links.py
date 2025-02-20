@@ -3,100 +3,65 @@
 
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
 import json
 import os
-from collections import deque
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
 
-# クロール開始URL: column配下
-ALLOWED_SOURCE_PREFIXES = [
-    "https://good-apps.jp/media/column/"
-]
-
-BASE_DOMAIN = "good-apps.jp"
-CRAWL_LIMIT = 10  # 10件だけで終了
 ARTICLES_JSON_PATH = os.path.join("data", "articles.json")
 
-def is_internal_link(url: str) -> bool:
-    """good-apps.jp ドメインかどうかを判定"""
-    parsed = urlparse(url)
-    return (parsed.netloc == "" or parsed.netloc.endswith(BASE_DOMAIN))
-
-def is_allowed_source(url: str) -> bool:
-    """URLが /media/column/ を含むならクロール対象"""
-    return any(url.startswith(prefix) for prefix in ALLOWED_SOURCE_PREFIXES)
+# 記事をいくつ見つけたら終了するか
+CRAWL_LIMIT = 10
+# 連番をどこまで試すか（大きすぎると負荷が高いので注意）
+MAX_ID = 30000
 
 def save_json(data, path: str):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def crawl_for_titles():
-    """幅優先で /media/column/ をたどり、10件だけタイトル取得。"""
-    visited = set()
-    articles = []  # [{"url": "...", "title": "..."}]
-    queue = deque(ALLOWED_SOURCE_PREFIXES)
-
-    while queue and len(articles) < CRAWL_LIMIT:
-        current = queue.popleft()
-        if current in visited:
-            continue
-        visited.add(current)
-
-        try:
-            resp = requests.get(current, headers=HEADERS, timeout=10)
-            if resp.status_code != 200:
-                print(f"[SKIP] {current} returned status {resp.status_code}")
-                continue
-
+def fetch_title(url: str) -> str:
+    """
+    GETして200ならtitleを返し、それ以外は空文字を返す。
+    """
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             title_tag = soup.find("title")
-            page_title = title_tag.get_text(strip=True) if title_tag else "(No Title)"
-
-            # 取得したURL & タイトルをarticlesへ追加
-            articles.append({
-                "url": current,
-                "title": page_title
-            })
-            print(f"[OK] {current} -> '{page_title}'")
-
-            # ページ内リンクを探索
-            for a in soup.find_all("a", href=True):
-                link = urljoin(current, a["href"])
-                # #以下除外
-                link = urlparse(link)._replace(fragment="").geturl()
-                if is_internal_link(link) and is_allowed_source(link):
-                    if link not in visited:
-                        queue.append(link)
-
-            # 10件に達したら終了
-            if len(articles) >= CRAWL_LIMIT:
-                print("[INFO] Reached 10 articles. Stopping crawl.")
-                break
-
-        except Exception as e:
-            print(f"[ERROR] {current} -> {e}")
-
-    return articles
+            return title_tag.get_text(strip=True) if title_tag else "(No Title)"
+        else:
+            return ""
+    except Exception as e:
+        print(f"[ERROR] {url} -> {e}")
+        return ""
 
 def main():
-    print("=== Start crawling for up to 10 articles under /media/column/ ===")
-    results = crawl_for_titles()
-    print(f"=== Found {len(results)} articles ===")
+    print("=== Start enumerating /media/column/<id> for up to 10 articles ===")
+    articles = []
+    found_count = 0
 
-    # 重複を除去したければ下記のように実装。ここでは簡易的に通過順に並べるだけ
-    # たとえば URL をキーに辞書でユニーク化するなど:
-    # unique_map = {}
-    # for r in results:
-    #     unique_map[r["url"]] = r["title"]
-    # final_list = [{"url":u, "title":t} for u,t in unique_map.items()]
+    for i in range(1, MAX_ID+1):
+        if found_count >= CRAWL_LIMIT:
+            break
 
-    # 今回は重複除去せず results をそのまま書き込み
-    save_json(results, ARTICLES_JSON_PATH)
+        url = f"https://good-apps.jp/media/column/{i}"
+        title = fetch_title(url)
+        if title:
+            # title が空でなければ 200 だったとみなす
+            articles.append({
+                "url": url,
+                "title": title
+            })
+            print(f"[OK] {url} -> '{title}'")
+            found_count += 1
+
+    print(f"=== Found {len(articles)} articles ===")
+
+    # 取得したarticlesを保存
+    save_json(articles, ARTICLES_JSON_PATH)
     print(f"[INFO] Saved to {ARTICLES_JSON_PATH}")
 
 if __name__ == "__main__":
