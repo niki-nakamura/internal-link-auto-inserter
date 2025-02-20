@@ -50,18 +50,7 @@ def create_session_with_retries(
     return session
 
 def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=10):
-    """
-    WordPress REST APIから、複数ページにわたる投稿を全件取得する。
-    per_page: 1ページあたりの取得数
-    max_pages: 最大取得ページ数
-    """
-    # リトライ＆タイムアウト付きのセッションを用意
-    session = create_session_with_retries(
-        total_retries=3,    # 必要に応じて増やす
-        backoff_factor=1.0, # リトライ時の待機時間増加係数
-        read_timeout=30     # 読み込みタイムアウトを30秒に
-    )
-
+    session = create_session_with_retries(...)
     all_posts = []
     page = 1
     while page <= max_pages:
@@ -72,16 +61,21 @@ def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=10):
 
         try:
             resp = session.get(base_url, headers=HEADERS, params=params)
+            # 200 OK なら投稿を取得
             if resp.status_code == 200:
                 data = resp.json()
                 if not data:
-                    break  # これ以上投稿がない
+                    print(f"[INFO] page={page} is empty. Stop fetching.")
+                    break
                 all_posts.extend(data)
+            elif resp.status_code in (400, 404):
+                # 400や404は「ページなし」と解釈してループ打ち切り
+                print(f"[INFO] page={page} returns {resp.status_code}. Probably no more posts.")
+                break
             else:
                 print(f"[ERROR] Failed to fetch page={page}. HTTP {resp.status_code}")
                 break
         except requests.exceptions.RequestException as e:
-            # タイムアウト含む通信系エラー発生時
             print(f"[ERROR] Exception occurred while fetching page={page}: {e}")
             break
 
