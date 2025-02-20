@@ -12,45 +12,71 @@ def get_auth_headers(username, password):
     }
 
 def load_link_mapping(path='data/linkMapping.json'):
+    """
+    差し込みたいキーワードとリンク先(URL)を対応させたJSONをロード
+    {
+      "キーワードA": "https://example.com",
+      "キーワードB": "https://example.org",
+      ...
+    }
+    """
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def get_post_raw_content(post_id, wp_url, wp_username, wp_password):
     """
-    ブロックコメント（<!-- wp:xxx -->）を含んだ raw データを取得するため、
-    ?context=edit を付与して認証付きリクエストする。
+    ブロックコメント（<!-- wp:xxx -->）含む “raw” な本文を取得。
+    ?context=edit を付けることで raw コンテンツを取れる。
     """
     headers = get_auth_headers(wp_username, wp_password)
     response = requests.get(
-        f"{wp_url}/wp-json/wp/v2/posts/{post_id}?context=edit",  # ← context=edit
+        f"{wp_url}/wp-json/wp/v2/posts/{post_id}?context=edit",
         headers=headers
     )
     print(f"get_post_content for {post_id}, status_code={response.status_code}")
     data = response.json()
 
-    # 認証不足や権限がないと 'raw' が返らない場合もある
+    # 認証不足や権限が無い場合は 'raw' が取れない場合もある
     raw_content = data.get('content', {}).get('raw', '')
     return raw_content
 
 def insert_links_to_content(content, link_mapping, max_links_per_post=1):
+    """
+    ・すでにリンク化されている箇所は上書きしない
+    ・max_links_per_post 回だけリンクを挿入したら打ち切り（デフォルト1回）
+    ・Post Snippets ブロックなど、ショートコード部分は避けたい場合は簡易的に除外する例も併記
+    """
     links_added = 0
+
+    # もしショートコードや特定ブロックは置換対象外にしたい場合の例:
+    # 1) 一時的にショートコードを退避
+    #    （厳密にはブロックコメントやHTMLタグ単位など、必要に応じて拡張）
+    #    ここではシンプルに "[xxx ...]" ～ "]" の正規表現で除外。
+    #    実プロジェクトでは自前で解析ロジックを強化してください。
+    shortcode_pattern = r'(\[.*?\])'
+    shortcodes = []
+    def shortcode_replacer(m):
+        shortcodes.append(m.group(0))
+        return f"__SHORTCODE_{len(shortcodes)-1}__"
+
+    content = re.sub(shortcode_pattern, shortcode_replacer, content)
 
     for keyword, url in link_mapping.items():
         if links_added >= max_links_per_post:
             break
 
-        # 既にリンク化されている箇所を上書きしないためのパターン
+        # 既にリンクがついている箇所は置換しないためのパターン
+        #   <a ...>...</a>  または キーワード (キーワード自身をエスケープ)
         pattern = rf'(<a[^>]*>.*?</a>|{re.escape(keyword)})'
 
         def replacement(match):
             nonlocal links_added
             text = match.group(0)
-
-            # 既にリンクがついている部分はそのまま
-            if text.startswith('<a'):
+            # 既にリンクタグ部分ならスルー
+            if text.lower().startswith('<a'):
                 return text
 
-            # まだ上限未満ならリンクを付与
+            # まだリンク挿入数が上限未満であれば差し込む
             if links_added < max_links_per_post:
                 links_added += 1
                 return f'<a href="{url}">{text}</a>'
@@ -58,21 +84,27 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=1):
                 return text
 
         updated_content = re.sub(pattern, replacement, content, count=1)
-
-        # 1箇所でもリンクを挿入したら content を更新して次のキーワードへ
+        # 置換が行われた場合(links_addedが増えたら) contentを更新
         if links_added > 0:
             content = updated_content
+
+    # 2) ショートコードを元に戻す
+    def shortcode_restore(m):
+        # m.group(1) には __SHORTCODE_xxx__ が入る
+        index = int(m.group(1).split('_')[-1])
+        return shortcodes[index]
+
+    content = re.sub(r'__SHORTCODE_(\d+)__', shortcode_restore, content)
 
     return content
 
 def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
     """
-    WP の REST API で「content」に raw の文字列を渡すと、
-    ブロックコメントを含んだまま更新される。
+    raw な文字列をそのまま content に渡すことで、ブロック崩れを防ぐ
     """
     headers = get_auth_headers(wp_username, wp_password)
     payload = {
-        'content': new_content  # rawな内容をそのまま渡す
+        'content': new_content
     }
     response = requests.post(
         f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
