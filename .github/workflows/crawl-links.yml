@@ -1,38 +1,44 @@
-name: "Crawl Links (Enumerate)"
+name: Crawl links
 
-permissions:
-  contents: write
-
+# "workflow_dispatch" を指定することで、GitHub Actions タブから手動実行できます
 on:
   workflow_dispatch:
 
+# あるいはスケジュール実行をしたい場合は、以下のように cron を追加
+# schedule:
+#   - cron: '0 3 * * *'  # 毎日午前3時に定期実行、など
+
+permissions:
+  contents: write   # リポジトリへの書き込み権限を付与
+
 jobs:
-  run-crawl:
+  run-crawl-links:
     runs-on: ubuntu-latest
     steps:
+      # 1) リポジトリをチェックアウト
       - name: Check out repository
         uses: actions/checkout@v3
 
+      # 2) Python環境をセットアップ
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12"
+          python-version: "3.9"  # 3.8, 3.10等でもOK
 
+      # 3) 必要なライブラリ（requestsなど）をインストール
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4
+          python -m pip install --upgrade pip
+          pip install requests
 
+      # 4) scripts/crawl_links.py を実行し、articles.json を更新
       - name: Run crawl_links.py
         run: |
           python scripts/crawl_links.py
 
-      - name: Commit articles.json changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/articles.json
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Update articles.json via GitHub Actions (enumerate approach)"
-            git push
+      # 5) 更新された articles.json をコミット＆プッシュ
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Update articles.json via GitHub Actions"
+          file_pattern: data/articles.json
