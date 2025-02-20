@@ -31,7 +31,7 @@ def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=10):
             "per_page": per_page,
             "page": page
         }
-        resp = requests.get(base_url, headers=HEADERS, params=params, timeout=10)
+        resp = requests.get(base_url, headers=HEADERS, params=params, timeout=30)
         if resp.status_code == 200:
             data = resp.json()
             if not data:
