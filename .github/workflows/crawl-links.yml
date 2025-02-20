@@ -1,0 +1,41 @@
+name: "Crawl Links"
+
+on:
+  # 手動実行
+  workflow_dispatch:
+  # 定期実行するならコメントアウト外す
+  # schedule:
+  #   - cron: '0 3 * * *'  # 毎日3時に実行など
+
+jobs:
+  run-crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run crawl_links.py
+        run: |
+          python scripts/crawl_links.py
+
+      - name: Commit articles.json changes
+        # 取得結果で articles.json に更新があった場合のみコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/articles.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update articles.json via GitHub Actions"
+            git push
+          fi
