@@ -1,13 +1,10 @@
-name: "Crawl Links"
+name: "Crawl Links (Enumerate)"
 
-# ★ リポジトリへの push を行うには contents: write が必要
 permissions:
   contents: write
 
 on:
   workflow_dispatch:
-  # schedule:  # 必要なら cron で定期実行
-  #   - cron: '0 3 * * *'
 
 jobs:
   run-crawl:
@@ -37,6 +34,5 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Update articles.json via GitHub Actions"
+            git commit -m "Update articles.json via GitHub Actions (enumerate approach)"
             git push
-          fi
