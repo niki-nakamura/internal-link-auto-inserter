@@ -19,9 +19,12 @@ LINK_USAGE_FILE_PATH = "data/linkUsage.json"
 ARTICLES_FILE_PATH = "data/articles.json"
 BRANCH = "main"
 
-# ===================================
-# ユーティリティ関数
-# ===================================
+# リンクを取得する際のUser-Agent（bot対策用に設定）
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                  " (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+}
+
 def load_json(path: str):
     """JSONファイルを読み込む。存在しなければ空の構造を返す。"""
     if not os.path.exists(path):
@@ -80,57 +83,7 @@ def commit_to_github(json_str: str, target_file_path: str, commit_message: str):
 
 
 # ===================================
-# WordPressから記事を取得する処理
-# ===================================
-def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=50):
-    all_posts = []
-    page = 1
-    while True:
-        params = {"per_page": per_page, "page": page}
-        res = requests.get(base_url, params=params)
-        if res.status_code != 200:
-            st.warning(f"記事取得でエラーが発生しました: HTTP {res.status_code}")
-            break
-
-        posts = res.json()
-        if not isinstance(posts, list) or len(posts) == 0:
-            break
-
-        all_posts.extend(posts)
-
-        total_pages = res.headers.get("X-WP-TotalPages")
-        if total_pages:
-            if page >= int(total_pages):
-                break
-        else:
-            if len(posts) < per_page:
-                break
-
-        page += 1
-        if page > max_pages:
-            st.warning(f"最大ページ数 {max_pages} に達したため中断")
-            break
-
-    return all_posts
-
-def extract_column_articles(posts):
-    """
-    全投稿の中から '/media/column/' が含まれているURLだけ抽出して返す。
-    """
-    article_list = []
-    for p in posts:
-        link = p.get("link", "")
-        if "/media/column/" in link:
-            article_list.append({
-                "id": str(p["id"]),  # linkUsage.jsonとの整合性を取りやすいようstr化
-                "title": p["title"]["rendered"],
-                "url": link
-            })
-    return article_list
-
-
-# ===================================
-# カテゴリー構造をフラット化するヘルパー関数
+# linkMapping.json の階層をフラット化
 # ===================================
 def flatten_link_mapping(nested_map: dict) -> dict:
     """
@@ -158,14 +111,14 @@ def flatten_link_mapping(nested_map: dict) -> dict:
 
 
 # ===================================
-# UI: リンクマッピング管理 (カテゴリー対応)
+# タブ1: リンクマッピング管理 (linkMapping.json)
 # ===================================
 def link_mapping_management():
     st.subheader("リンクマッピング管理 (linkMapping.json)")
 
     link_mapping_data = load_json(LINK_MAPPING_JSON_PATH)
 
-    # 旧形式(フラット)を「Uncategorized」に移行する処理などは省略 or 必要に応じて追加
+    # 旧形式(フラット)を一度に扱っている場合は念のためUncategorizedに入れるなどの処理も可
     if link_mapping_data and not all(isinstance(v, dict) for v in link_mapping_data.values()):
         st.warning("旧来のフラットな linkMapping.json を検出したため、'Uncategorized' に移行しました。")
         link_mapping_data = {"Uncategorized": link_mapping_data}
@@ -264,7 +217,7 @@ def link_mapping_management():
             st.warning("カテゴリー名を入力してください。")
 
     # GitHubコミット
-    if st.button("保存（追加したら必ず押す!）"):
+    if st.button("保存（追加・編集後は必ず押す）"):
         save_json_locally(link_mapping_data, LINK_MAPPING_JSON_PATH)
         st.success("ローカルファイル(linkMapping.json)更新完了")
         mapping_json_str = json.dumps(link_mapping_data, ensure_ascii=False, indent=2)
@@ -273,7 +226,7 @@ def link_mapping_management():
 
 
 # ===================================
-# UI: リンク使用状況の確認 + アノマリー検知 (2回以上挿入など)
+# タブ2: リンク使用状況の確認 (linkUsage.json)
 # ===================================
 def link_usage_view():
     st.subheader("リンク使用状況 (linkUsage.json)")
@@ -367,7 +320,7 @@ def link_usage_view():
 
 
 # ===================================
-# UI: WordPress記事一覧管理
+# タブ3: WordPress記事一覧管理 (articles.json)
 # ===================================
 def articles_management():
     st.subheader("WordPress 記事一覧管理 (articles.json)")
@@ -381,19 +334,59 @@ def articles_management():
 
     st.write("---")
     st.write("### WordPress REST APIから記事を取得")
-    base_api_url = st.text_input("WP REST APIエンドポイントURL", value="https://good-apps.jp/media/wp-json/wp/v2/posts")
+
+    # 既定で good-apps.jp のAPIを例示
+    base_api_url = st.text_input(
+        "WP REST APIエンドポイントURL",
+        value="https://good-apps.jp/media/wp-json/wp/v2/posts"
+    )
 
     if st.button("記事を取得 (REST API)"):
-        with st.spinner("記事を取得中..."):
-            all_posts = fetch_all_wp_posts(base_api_url, per_page=50, max_pages=50)
-            column_posts = extract_column_articles(all_posts)
-            st.info(f"API取得: {len(all_posts)}件中、'/media/column/' を含む投稿 {len(column_posts)}件")
+        # “crawl_links.py” とほぼ同じ実装でもOK。ここでは簡易化
+        all_posts = []
+        page = 1
+        per_page = 50
+        max_pages = 50
 
-            articles_data = column_posts
-            save_json_locally(articles_data, ARTICLES_JSON_PATH)
-            st.success(f"articles.json に {len(articles_data)} 件のデータを保存しました。")
-            # バージョンによっては experimental_rerun() が使えないことがあるのでコメントアウト
-            # st.experimental_rerun()
+        while True:
+            params = {"per_page": per_page, "page": page}
+            res = requests.get(base_api_url, headers=HEADERS, params=params)
+            if res.status_code != 200:
+                st.warning(f"記事取得でエラーが発生しました: HTTP {res.status_code}")
+                break
+            posts = res.json()
+            if not isinstance(posts, list) or len(posts) == 0:
+                break
+
+            all_posts.extend(posts)
+            total_pages = res.headers.get("X-WP-TotalPages")
+            if total_pages:
+                if page >= int(total_pages):
+                    break
+            else:
+                if len(posts) < per_page:
+                    break
+            page += 1
+            if page > max_pages:
+                st.warning(f"最大ページ数 {max_pages} に達したため中断")
+                break
+
+        # /media/column/ を含む投稿だけ抽出
+        column_posts = []
+        for p in all_posts:
+            link = p.get("link", "")
+            if "/media/column/" in link:
+                column_posts.append({
+                    "id": str(p["id"]),
+                    "title": p["title"]["rendered"],
+                    "url": link
+                })
+
+        st.info(f"API取得: {len(all_posts)}件中、'/media/column/' を含む投稿 {len(column_posts)}件")
+
+        articles_data = column_posts
+        save_json_locally(articles_data, ARTICLES_JSON_PATH)
+        st.success(f"articles.json に {len(articles_data)} 件のデータを上書き保存しました。")
 
     if st.button("articles.json をGitHubへコミット"):
         art_str = json.dumps(articles_data, ensure_ascii=False, indent=2)
@@ -401,14 +394,12 @@ def articles_management():
 
 
 # ===================================
-# UI: 記事別リンク管理
-#    → カテゴリー構造はフラット化して一括管理
-#    → プルダウン + 検索フォームの追加
+# タブ4: 記事別リンク「手動」管理 (linkUsage.jsonに反映)
+#       ※今回の改良後は自動検知がメインになるが、補助的に残す
 # ===================================
 def article_based_link_management():
-    st.subheader("記事別リンク管理")
+    st.subheader("記事別リンク管理（手動設定用）")
 
-    # データ読み込み
     nested_link_mapping = load_json(LINK_MAPPING_JSON_PATH)  # {category: {kw: url}}
     link_mapping_flat = flatten_link_mapping(nested_link_mapping)
     link_usage = load_json(LINK_USAGE_JSON_PATH)
@@ -484,7 +475,63 @@ def article_based_link_management():
 
 
 # ===================================
-# メインアプリ
+# ★★ 新規追加: タブ5 内部リンク自動検出 (HTMLクロール→linkUsage.jsonを再生成)
+# ===================================
+def auto_detect_link_usage():
+    st.subheader("内部リンク自動検出 → linkUsage.json更新")
+
+    articles_data = load_json(ARTICLES_JSON_PATH)
+    if not articles_data:
+        st.warning("articles.json に記事がありません。先に[WordPress記事一覧管理]タブで取得してください。")
+        return
+
+    nested_link_mapping = load_json(LINK_MAPPING_JSON_PATH)
+    link_mapping_flat = flatten_link_mapping(nested_link_mapping)
+
+    if st.button("記事をクロールしてlinkUsage.jsonを更新"):
+        # 新しい usage dict を一旦まっさらで用意
+        new_usage = {}
+        for kw, link_url in link_mapping_flat.items():
+            new_usage[kw] = {
+                "url": link_url,
+                "articles_used_in": {}
+            }
+
+        # 各記事URLをfetchし、<a href="URL">の出現回数を数える
+        for article in articles_data:
+            art_id = article["id"]
+            art_url = article["url"]
+            try:
+                resp = requests.get(art_url, headers=HEADERS, timeout=10)
+                if resp.status_code == 200:
+                    html = resp.text
+                else:
+                    st.warning(f"記事 {art_id} の取得に失敗(HTTP {resp.status_code}): {art_url}")
+                    continue
+            except Exception as e:
+                st.warning(f"記事 {art_id} の取得中にエラー: {e}")
+                continue
+
+            # linkMappingに登録されているURLがHTML内に何回出てくるかカウント
+            # （単純に .count(...) でOKだが、'href="...' 以外にも出現する可能性は要注意）
+            for kw, usage_info in new_usage.items():
+                target_url = usage_info["url"]
+                count = html.count(f'href="{target_url}"')
+                if count > 0:
+                    usage_info["articles_used_in"][art_id] = count
+
+        # 生成した new_usage を保存
+        save_json_locally(new_usage, LINK_USAGE_JSON_PATH)
+        st.success("linkUsage.json を自動検出結果で更新しました。")
+
+        # 追ってGitHubにコミットしたい場合
+        if st.button("GitHubへコミットする"):
+            usage_str = json.dumps(new_usage, ensure_ascii=False, indent=2)
+            commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Auto-detect link usage update")
+
+
+# ===================================
+# メイン
 # ===================================
 def main():
     st.title("内部リンク管理ツール")
@@ -493,7 +540,8 @@ def main():
         "リンクマッピング管理",
         "リンク使用状況の確認",
         "WordPress記事一覧管理",
-        "記事別リンク管理"
+        "記事別リンク管理（手動）",
+        "内部リンク自動検出"
     ])
     
     with tabs[0]:
@@ -507,6 +555,10 @@ def main():
 
     with tabs[3]:
         article_based_link_management()
+
+    # 新規追加したタブ
+    with tabs[4]:
+        auto_detect_link_usage()
 
 
 if __name__ == "__main__":
