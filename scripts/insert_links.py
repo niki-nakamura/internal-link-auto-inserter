@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import json
 import requests
 import re
 import base64
+import streamlit as st
 
 LINK_USAGE_JSON = "data/linkUsage.json"
 ARTICLES_JSON   = "data/articles.json"
@@ -40,7 +40,7 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
     """
     link_mapping: { "キーワード": "URL", ... }
     すでにリンクのある箇所は無視。
-    ショートコードなど一部を除外したい例をコメントで記載。
+    ショートコードなど一部を除外したい場合は適宜処理を追加してください。
     """
     links_added = 0
     shortcode_pattern = r'(\[.*?\])'
@@ -87,22 +87,24 @@ def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
 
 def main():
     """
-    1) WP_URL, WP_USERNAME, WP_PASSWORD を環境変数から取得
+    1) Streamlit Secrets から WP_URL, WP_USERNAME, WP_PASSWORD を取得
     2) linkUsage.json, articles.json をロード
     3) linkUsage.json の "articles_used_in" が ON の記事IDごとに
        → その記事に必要なキーワードだけまとめて insert_links_to_content
        → WordPress更新
     """
-    wp_url = os.environ.get("WP_URL", "")
-    wp_username = os.environ.get("WP_USERNAME", "")
-    wp_password = os.environ.get("WP_PASSWORD", "")
+    # ここで st.secrets から取得
+    wp_url      = st.secrets["WP_URL"]
+    wp_username = st.secrets["WP_USERNAME"]
+    wp_password = st.secrets["WP_PASSWORD"]
 
+    # 念のためチェック
     if not (wp_url and wp_username and wp_password):
-        print("[ERROR] WP_URL, WP_USERNAME, WP_PASSWORD not set. Abort.")
+        print("[ERROR] WP_URL, WP_USERNAME, WP_PASSWORD not set in st.secrets. Abort.")
         return
 
     link_usage = load_json(LINK_USAGE_JSON)
-    articles = load_json(ARTICLES_JSON)
+    articles   = load_json(ARTICLES_JSON)
     if not link_usage or not articles:
         print("[ERROR] linkUsage.json or articles.json is empty. Abort.")
         return
@@ -130,7 +132,7 @@ def main():
 
         updated_content = insert_links_to_content(raw_content, kw_map, max_links_per_post=3)
         if updated_content != raw_content:
-            status, resp_txt = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
+            status, _ = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
             print(f"Updated post {post_id}({art_title}), status={status}")
         else:
             print(f"No changes for post {post_id}({art_title}).")
