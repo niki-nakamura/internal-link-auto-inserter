@@ -1,0 +1,39 @@
+name: Detect link usage
+
+on:
+  # 手動実行
+  workflow_dispatch:
+
+  # 週1回、月曜午前3時に実行（必要に応じてお好みで）
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: write  # リポジトリへの書き込み権限
+
+jobs:
+  detect-link-usage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"  # 必要に応じて
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run detect_link_usage.py
+        run: |
+          python scripts/detect_link_usage.py
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Update linkUsage.json via GitHub Actions (auto-detect internal links)"
+          file_pattern: data/linkUsage.json
