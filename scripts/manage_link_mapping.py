@@ -291,7 +291,7 @@ def link_usage_view():
 # タブ3: 記事別リンク管理（手動設定用, 複数記事）
 # ===================================
 def article_based_link_management():
-    st.subheader("記事別リンク管理（手動設定用）")
+    st.subheader("記事別リンク管理")
 
     link_mapping = load_json(LINK_MAPPING_JSON_PATH)
     link_mapping_flat = flatten_link_mapping(link_mapping)
