@@ -224,21 +224,16 @@ def link_mapping_management():
 def link_usage_view():
     st.subheader("リンク使用状況 (linkUsage.json)")
     link_usage = load_json(LINK_USAGE_JSON_PATH)
-    articles_data = load_json(ARTICLES_JSON_PATH)  # 記事タイトルとURLを参照するため
+    articles_data = load_json(ARTICLES_JSON_PATH)  # 公開済み記事352件など
 
     if not link_usage:
         st.info("まだ使用状況が記録されていません。")
         return
 
-    # 同じ記事に複数回挿入された箇所を検知するためのリスト
-    multiple_insert_anomalies = []  # [(kw, article_id, count), ...]
-
-    # --- キーワードごとに列挙 ---
+    # -- 1) キーワード単位の表示 (従来通り) -------------
+    multiple_insert_anomalies = []
     for kw, usage_info in link_usage.items():
-        # キーワードの見出し
         st.markdown(f"### キーワード: {kw}")
-
-        # linkMapping.jsonで登録されているURL
         usage_url = usage_info.get("url", "")
         st.write(f"- 登録URL: {usage_url}")
 
@@ -250,46 +245,39 @@ def link_usage_view():
 
             with st.expander("使用内訳を表示"):
                 for article_id, count in articles_dict.items():
-                    # 2回以上なら後でエラー表示
+                    # 2回以上なら警告リストに追加
                     if count > 1:
                         multiple_insert_anomalies.append((kw, article_id, count))
 
-                    # articles.jsonから該当記事を探す
+                    # 記事タイトル／URL を取得
                     found_article = next((a for a in articles_data if a["id"] == article_id), None)
                     if found_article:
                         art_title = found_article["title"]
-                        art_url = found_article["url"]
-                        # 表示例：「・記事：タイトル (URL) → 挿入回数X回」
+                        art_url   = found_article["url"]
                         st.write(
-                            f"- **記事**: [{art_title}]({art_url})  "
-                            f"→ 挿入回数: {count}"
+                            f"- **記事**: [{art_title}]({art_url}) → 挿入回数: {count}"
                         )
                     else:
-                        # 見つからない場合
-                        st.write(f"- 記事ID: {article_id} (articles.jsonに存在しません) → {count}回")
+                        st.write(f"- 記事ID: {article_id} (不明) → {count}回")
         else:
             st.write("- まだ使用記録がありません。")
 
-    # --- 2回以上挿入アノマリーを警告 ---
+    # 2回以上挿入の警告
     if multiple_insert_anomalies:
         st.error("【要注意】同じ記事に複数回リンクが挿入されているケースがあります！")
         for (kw, art_id, c) in multiple_insert_anomalies:
-            # 記事タイトルを探して補足表示
             found_article = next((a for a in articles_data if a["id"] == art_id), None)
             if found_article:
-                title_text = found_article["title"]
+                st.write(f"- キーワード『{kw}』 : {found_article['title']} (ID={art_id}), 挿入回数={c}")
             else:
-                title_text = "（記事不明）"
-            st.write(f"- キーワード『{kw}』 : 記事ID={art_id}, タイトル={title_text}, 挿入回数={c}")
+                st.write(f"- キーワード『{kw}』 : 記事ID={art_id}, 挿入回数={c}")
 
+    # -- 2) 記事別サマリー (従来のテーブル) -------------
     st.write("---")
     st.write("#### 記事別のリンク数 サマリー")
-
-    # 記事ID -> { 'title':..., 'total_link_count':..., 'details':{kw: count} }
     article_usage_summary = {}
     for kw, usage_info in link_usage.items():
-        articles_dict = usage_info.get("articles_used_in", {})
-        for art_id, c in articles_dict.items():
+        for art_id, c in usage_info.get("articles_used_in", {}).items():
             if art_id not in article_usage_summary:
                 article_usage_summary[art_id] = {
                     "title": None,
@@ -300,13 +288,12 @@ def link_usage_view():
             article_usage_summary[art_id]["total_link_count"] += c
             article_usage_summary[art_id]["details"][kw] = c
 
-    # articles.jsonからタイトル・URLを補完
-    for art in articles_data:
-        if art["id"] in article_usage_summary:
-            article_usage_summary[art["id"]]["title"] = art["title"]
-            article_usage_summary[art["id"]]["url"] = art["url"]
+    # articles.json からタイトルとURLを補完
+    for a in articles_data:
+        if a["id"] in article_usage_summary:
+            article_usage_summary[a["id"]]["title"] = a["title"]
+            article_usage_summary[a["id"]]["url"]   = a["url"]
 
-    # テーブルやリストで出力
     if article_usage_summary:
         st.table([
             {
@@ -314,91 +301,40 @@ def link_usage_view():
                 "タイトル": (info["title"] or "（記事情報なし）"),
                 "URL": (info["url"] or ""),
                 "リンク挿入合計": info["total_link_count"],
-                "キーワード詳細": ", ".join([f"{kw}={cnt}" for kw, cnt in info["details"].items()])
+                "キーワード詳細": ", ".join(f"{kw}={cnt}" for kw, cnt in info["details"].items())
             }
             for art_id, info in article_usage_summary.items()
         ])
     else:
         st.info("まだリンクが挿入された記事はありません。")
 
-    # GitHubコミットボタン（任意）
+    # -- 3) 全記事をリスト化して内部リンクの有無を表示 -------------
+    st.write("---")
+    st.write(f"### 全 {len(articles_data)} 件の記事の内部リンク状況一覧")
+
+    for article in articles_data:
+        art_id = article["id"]
+        art_title = article["title"]
+        art_url   = article["url"]
+
+        st.markdown(f"#### [{art_title}]({art_url})  (ID={art_id})")
+
+        # この記事に何かリンクがある？
+        if art_id in article_usage_summary:
+            info = article_usage_summary[art_id]
+            # details: {キーワード: 挿入回数}
+            details_str = ", ".join(
+                f"{kw}({cnt}回)"
+                for kw, cnt in info["details"].items()
+            )
+            st.write(f"- リンク挿入合計: {info['total_link_count']}  ( {details_str} )")
+        else:
+            st.write("- 内部リンクはありません。")
+
+    # -- 4) 変更をGitHubにコミット(任意) -------------
     if st.button("使用状況をGitHubへコミット"):
         usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
         commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Update linkUsage.json from Streamlit")
-
-# ===================================
-# タブ3: WordPress記事一覧管理 (articles.json)
-# ===================================
-def articles_management():
-    st.subheader("WordPress 記事一覧管理 (articles.json)")
-
-    articles_data = load_json(ARTICLES_JSON_PATH)
-    st.write(f"現在の登録件数: {len(articles_data)}")
-
-    if articles_data:
-        with st.expander("登録済み記事リストを表示"):
-            for art in articles_data:
-                st.markdown(f"- **ID**: {art['id']} | **Title**: {art['title']} | **URL**: {art['url']}")
-
-    st.write("---")
-    st.write("### WordPress REST APIから記事を取得 (手動)")
-
-    # APIエンドポイント (good-apps.jpを例示)
-    base_api_url = st.text_input(
-        "WP REST APIエンドポイントURL",
-        value="https://good-apps.jp/media/wp-json/wp/v2/posts"
-    )
-
-    if st.button("記事を取得 (REST API)"):
-        all_posts = []
-        page = 1
-        per_page = 50
-        max_pages = 50
-
-        while True:
-            params = {"per_page": per_page, "page": page}
-            res = requests.get(base_api_url, headers=HEADERS, params=params)
-            if res.status_code != 200:
-                st.warning(f"記事取得でエラーが発生: HTTP {res.status_code}")
-                break
-            posts = res.json()
-            if not isinstance(posts, list) or len(posts) == 0:
-                break
-
-            all_posts.extend(posts)
-            total_pages = res.headers.get("X-WP-TotalPages")
-            if total_pages:
-                if page >= int(total_pages):
-                    break
-            else:
-                if len(posts) < per_page:
-                    break
-
-            page += 1
-            if page > max_pages:
-                st.warning(f"最大ページ数 {max_pages} に達したため中断")
-                break
-
-        # /media/column/ を含む投稿だけ抽出
-        column_posts = []
-        for p in all_posts:
-            link = p.get("link", "")
-            if "/media/column/" in link:
-                column_posts.append({
-                    "id": str(p["id"]),
-                    "title": p["title"]["rendered"],
-                    "url": link
-                })
-
-        st.info(f"API取得: {len(all_posts)}件中、'/media/column/' 含む投稿 {len(column_posts)}件")
-        articles_data = column_posts
-        save_json_locally(articles_data, ARTICLES_JSON_PATH)
-        st.success(f"articles.json に {len(articles_data)} 件のデータを上書き保存しました。")
-
-    if st.button("articles.json をGitHubへコミット"):
-        art_str = json.dumps(articles_data, ensure_ascii=False, indent=2)
-        commit_to_github(art_str, ARTICLES_FILE_PATH, "Update articles.json from WP REST API")
-
 
 # ===================================
 # タブ4: 記事別リンク管理（手動設定用）
