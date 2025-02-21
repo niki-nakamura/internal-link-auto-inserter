@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import json
 import os
 import base64
@@ -21,10 +21,14 @@ BRANCH = "main"
 
 # リンクを取得する際のUser-Agent（bot対策用に設定）
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                  " (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                  " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
 
+
+# ===================================
+# ユーティリティ関数
+# ===================================
 def load_json(path: str):
     """JSONファイルを読み込む。存在しなければ空の構造を返す。"""
     if not os.path.exists(path):
@@ -82,27 +86,16 @@ def commit_to_github(json_str: str, target_file_path: str, commit_message: str):
         st.error(f"[ERROR] GitHubへのコミットに失敗: {put_res.status_code} / {put_res.text}")
 
 
-# ===================================
-# linkMapping.json の階層をフラット化
-# ===================================
 def flatten_link_mapping(nested_map: dict) -> dict:
     """
-    例:
+    linkMapping.json が
       {
-         "ゲーム": {
-             "暇つぶしゲーム": "URL1",
-             "カードゲーム": "URL2"
-         },
-         "交通": {
-             "タクシー": "URL3"
-         }
+         "カテゴリA": {"キーワード1": "URL", "キーワード2": "URL2"},
+         "カテゴリB": {"キーワード3": "URL3"}
       }
-    ⇒
-      {
-         "暇つぶしゲーム": "URL1",
-         "カードゲーム": "URL2",
-         "タクシー": "URL3"
-      }
+    のようになっている場合に、平坦化して
+      {"キーワード1": "URL", "キーワード2": "URL2", "キーワード3": "URL3"}
+    を返す
     """
     flat_map = {}
     for category, kw_dict in nested_map.items():
@@ -118,7 +111,7 @@ def link_mapping_management():
 
     link_mapping_data = load_json(LINK_MAPPING_JSON_PATH)
 
-    # 旧形式(フラット)を一度に扱っている場合は念のためUncategorizedに入れるなどの処理も可
+    # 旧形式(フラット)を「Uncategorized」に移行
     if link_mapping_data and not all(isinstance(v, dict) for v in link_mapping_data.values()):
         st.warning("旧来のフラットな linkMapping.json を検出したため、'Uncategorized' に移行しました。")
         link_mapping_data = {"Uncategorized": link_mapping_data}
@@ -237,10 +230,10 @@ def link_usage_view():
         st.info("まだ使用状況が記録されていません。")
         return
 
-    # 「2回以上挿入されている」ケースをまとめるリスト
+    # 同じ記事に複数回挿入された箇所を検知
     multiple_insert_anomalies = []  # [(kw, article_id, count), ...]
 
-    # キーワード単位に表示
+    # --- キーワードごとに列挙 ---
     for kw, usage_info in link_usage.items():
         st.markdown(f"### キーワード: {kw}")
         usage_url = usage_info.get("url", "")
@@ -252,10 +245,9 @@ def link_usage_view():
             total_inserts = sum(articles_dict.values())
             st.write(f"- 合計挿入回数: {total_inserts}")
 
-            # 使用内訳を表示
+            # 使用内訳
             with st.expander("使用内訳を表示"):
                 for article_id, count in articles_dict.items():
-                    # 2回以上なら警告
                     if count > 1:
                         multiple_insert_anomalies.append((kw, article_id, count))
                         st.write(f"  - **記事ID: {article_id} → {count}回 (要確認)**")
@@ -264,11 +256,11 @@ def link_usage_view():
         else:
             st.write("- まだ使用記録がありません。")
 
-    # 2回以上挿入されているキーワードがあれば警告
+    # --- 複数回挿入アノマリー ---
     if multiple_insert_anomalies:
         st.error("【要注意】同じ記事に複数回リンクが挿入されているケースがあります！")
         for (kw, art_id, c) in multiple_insert_anomalies:
-            # 記事タイトルを探して補足表示
+            # 記事タイトルを探して表示
             title_text = None
             for a in articles_data:
                 if a["id"] == art_id:
@@ -280,7 +272,8 @@ def link_usage_view():
 
     st.write("---")
     st.write("#### 記事別のリンク数 サマリー")
-    # 記事ID -> { 'title': ..., 'total_link_count': ..., 'details': {kw: count} }
+
+    # 記事ID -> { 'title':..., 'total_link_count':..., 'details':{kw: count} }
     article_usage_summary = {}
     for kw, usage_info in link_usage.items():
         articles_dict = usage_info.get("articles_used_in", {})
@@ -299,7 +292,6 @@ def link_usage_view():
         if art["id"] in article_usage_summary:
             article_usage_summary[art["id"]]["title"] = art["title"]
 
-    # テーブル表示
     if article_usage_summary:
         st.table([
             {
@@ -313,7 +305,7 @@ def link_usage_view():
     else:
         st.info("まだリンクが挿入された記事はありません。")
 
-    # GitHubコミットボタン
+    # 必要に応じてGitHubコミット
     if st.button("使用状況をGitHubへコミット"):
         usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
         commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Update linkUsage.json from Streamlit")
@@ -324,25 +316,25 @@ def link_usage_view():
 # ===================================
 def articles_management():
     st.subheader("WordPress 記事一覧管理 (articles.json)")
-    articles_data = load_json(ARTICLES_JSON_PATH)
 
+    articles_data = load_json(ARTICLES_JSON_PATH)
     st.write(f"現在の登録件数: {len(articles_data)}")
+
     if articles_data:
         with st.expander("登録済み記事リストを表示"):
             for art in articles_data:
                 st.markdown(f"- **ID**: {art['id']} | **Title**: {art['title']} | **URL**: {art['url']}")
 
     st.write("---")
-    st.write("### WordPress REST APIから記事を取得")
+    st.write("### WordPress REST APIから記事を取得 (手動)")
 
-    # 既定で good-apps.jp のAPIを例示
+    # APIエンドポイント (good-apps.jpを例示)
     base_api_url = st.text_input(
         "WP REST APIエンドポイントURL",
         value="https://good-apps.jp/media/wp-json/wp/v2/posts"
     )
 
     if st.button("記事を取得 (REST API)"):
-        # “crawl_links.py” とほぼ同じ実装でもOK。ここでは簡易化
         all_posts = []
         page = 1
         per_page = 50
@@ -352,7 +344,7 @@ def articles_management():
             params = {"per_page": per_page, "page": page}
             res = requests.get(base_api_url, headers=HEADERS, params=params)
             if res.status_code != 200:
-                st.warning(f"記事取得でエラーが発生しました: HTTP {res.status_code}")
+                st.warning(f"記事取得でエラーが発生: HTTP {res.status_code}")
                 break
             posts = res.json()
             if not isinstance(posts, list) or len(posts) == 0:
@@ -366,6 +358,7 @@ def articles_management():
             else:
                 if len(posts) < per_page:
                     break
+
             page += 1
             if page > max_pages:
                 st.warning(f"最大ページ数 {max_pages} に達したため中断")
@@ -382,8 +375,7 @@ def articles_management():
                     "url": link
                 })
 
-        st.info(f"API取得: {len(all_posts)}件中、'/media/column/' を含む投稿 {len(column_posts)}件")
-
+        st.info(f"API取得: {len(all_posts)}件中、'/media/column/' 含む投稿 {len(column_posts)}件")
         articles_data = column_posts
         save_json_locally(articles_data, ARTICLES_JSON_PATH)
         st.success(f"articles.json に {len(articles_data)} 件のデータを上書き保存しました。")
@@ -394,8 +386,9 @@ def articles_management():
 
 
 # ===================================
-# タブ4: 記事別リンク「手動」管理 (linkUsage.jsonに反映)
-#       ※今回の改良後は自動検知がメインになるが、補助的に残す
+# タブ4: 記事別リンク管理（手動設定用）
+#   - 自動検出(GitHub Actions)をベースにしつつ、
+#     手動で1記事ごとの ON/OFF を調整したい時に利用
 # ===================================
 def article_based_link_management():
     st.subheader("記事別リンク管理（手動設定用）")
@@ -409,7 +402,7 @@ def article_based_link_management():
         st.warning("articles.json が空です。先に[WordPress記事一覧管理]タブで記事を取得してください。")
         return
 
-    # 検索フォーム
+    # 記事タイトル検索
     search_term = st.text_input("記事タイトル検索", value="", help="一部一致でフィルタします")
     if search_term.strip():
         filtered_articles = [
@@ -423,7 +416,7 @@ def article_based_link_management():
         st.warning("検索に一致する記事がありません。")
         return
 
-    # 記事を選択用のプルダウン
+    # 記事選択
     article_disp_list = [f"{a['id']} | {a['title']}" for a in filtered_articles]
     selected_item = st.selectbox("記事を選択", article_disp_list)
     selected_index = article_disp_list.index(selected_item)
@@ -439,7 +432,7 @@ def article_based_link_management():
 
     changes_made = False
 
-    # キーワードごとにチェックボックスを設置
+    # キーワードごとにON/OFF管理
     for kw, url in link_mapping_flat.items():
         if kw not in link_usage:
             link_usage[kw] = {
@@ -456,7 +449,7 @@ def article_based_link_management():
         if new_checked != is_checked:
             changes_made = True
             if new_checked:
-                # 1記事1回だけと想定するなら '1' で十分
+                # 1記事1回だけと想定
                 articles_used_in[selected_article_id] = 1
             else:
                 articles_used_in.pop(selected_article_id, None)
@@ -464,10 +457,12 @@ def article_based_link_management():
     if changes_made:
         st.warning("変更がありました。下記ボタンで保存してください。")
 
+    # 変更保存
     if st.button("保存 (この記事のリンクON/OFF設定)"):
         save_json_locally(link_usage, LINK_USAGE_JSON_PATH)
         st.success("linkUsage.json を更新しました。")
 
+        # 必要に応じてGitHubコミット
         if st.checkbox("linkUsage.jsonをGitHubへコミットする"):
             usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
             commit_to_github(usage_str, LINK_USAGE_FILE_PATH,
@@ -475,63 +470,8 @@ def article_based_link_management():
 
 
 # ===================================
-# ★★ 新規追加: タブ5 内部リンク自動検出 (HTMLクロール→linkUsage.jsonを再生成)
-# ===================================
-def auto_detect_link_usage():
-    st.subheader("内部リンク自動検出 → linkUsage.json更新")
-
-    articles_data = load_json(ARTICLES_JSON_PATH)
-    if not articles_data:
-        st.warning("articles.json に記事がありません。先に[WordPress記事一覧管理]タブで取得してください。")
-        return
-
-    nested_link_mapping = load_json(LINK_MAPPING_JSON_PATH)
-    link_mapping_flat = flatten_link_mapping(nested_link_mapping)
-
-    if st.button("記事をクロールしてlinkUsage.jsonを更新"):
-        # 新しい usage dict を一旦まっさらで用意
-        new_usage = {}
-        for kw, link_url in link_mapping_flat.items():
-            new_usage[kw] = {
-                "url": link_url,
-                "articles_used_in": {}
-            }
-
-        # 各記事URLをfetchし、<a href="URL">の出現回数を数える
-        for article in articles_data:
-            art_id = article["id"]
-            art_url = article["url"]
-            try:
-                resp = requests.get(art_url, headers=HEADERS, timeout=10)
-                if resp.status_code == 200:
-                    html = resp.text
-                else:
-                    st.warning(f"記事 {art_id} の取得に失敗(HTTP {resp.status_code}): {art_url}")
-                    continue
-            except Exception as e:
-                st.warning(f"記事 {art_id} の取得中にエラー: {e}")
-                continue
-
-            # linkMappingに登録されているURLがHTML内に何回出てくるかカウント
-            # （単純に .count(...) でOKだが、'href="...' 以外にも出現する可能性は要注意）
-            for kw, usage_info in new_usage.items():
-                target_url = usage_info["url"]
-                count = html.count(f'href="{target_url}"')
-                if count > 0:
-                    usage_info["articles_used_in"][art_id] = count
-
-        # 生成した new_usage を保存
-        save_json_locally(new_usage, LINK_USAGE_JSON_PATH)
-        st.success("linkUsage.json を自動検出結果で更新しました。")
-
-        # 追ってGitHubにコミットしたい場合
-        if st.button("GitHubへコミットする"):
-            usage_str = json.dumps(new_usage, ensure_ascii=False, indent=2)
-            commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Auto-detect link usage update")
-
-
-# ===================================
-# メイン
+# メインアプリ
+# （内部リンク自動検出はGitHub Actionsへ移行したため、タブは削除）
 # ===================================
 def main():
     st.title("内部リンク管理ツール")
@@ -540,10 +480,9 @@ def main():
         "リンクマッピング管理",
         "リンク使用状況の確認",
         "WordPress記事一覧管理",
-        "記事別リンク管理（手動）",
-        "内部リンク自動検出"
+        "記事別リンク管理（手動）"
     ])
-    
+
     with tabs[0]:
         link_mapping_management()
 
@@ -555,10 +494,6 @@ def main():
 
     with tabs[3]:
         article_based_link_management()
-
-    # 新規追加したタブ
-    with tabs[4]:
-        auto_detect_link_usage()
 
 
 if __name__ == "__main__":
