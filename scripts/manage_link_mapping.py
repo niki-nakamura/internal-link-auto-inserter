@@ -146,10 +146,10 @@ def save_json_locally(data, path):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def commit_to_github(json_str, target_file_path, commit_message):
-    try:
-        token = st.secrets["secrets"]["GITHUB_TOKEN"]
-    except KeyError:
-        st.error("[ERROR] GITHUB_TOKEN がStreamlit Secretsに設定されていません。")
+    import os
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        st.error("[ERROR] GITHUB_TOKEN が環境変数に設定されていません。")
         return
 
     url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/contents/{target_file_path}?ref={BRANCH}"
@@ -404,9 +404,10 @@ def article_based_link_management():
     st.subheader("記事別リンク管理（手動）: 複数記事に一括でリンクON/OFF設定 & WP更新")
 
     # WP接続情報
-    WP_URL      = st.secrets.get("WP_URL", "")
-    WP_USERNAME = st.secrets.get("WP_USERNAME", "")
-    WP_PASSWORD = st.secrets.get("WP_PASSWORD", "")
+    import os
+    WP_URL      = os.environ.get("WP_URL", "")
+    WP_USERNAME = os.environ.get("WP_USERNAME", "")
+    WP_PASSWORD = os.environ.get("WP_PASSWORD", "")
 
     nested_mapping = load_json(LINK_MAPPING_JSON_PATH)
     link_usage     = load_json(LINK_USAGE_JSON_PATH)
