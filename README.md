@@ -1,225 +1,164 @@
 # 内部リンク自動挿入システム
+# internal-link-auto-inserter
 
-## 概要
-このリポジトリは、GitHub Actions と独自スクリプト（例：Python）を活用し、WordPress の投稿本文に対して自動で内部リンクを挿入する仕組みを実装するためのサンプルプロジェクトです。本システムでは、以下の機能を実現します。
+WordPress の投稿記事へ自動的に内部リンクを挿入するためのスクリプトや管理ツールをまとめたリポジトリです。  
+ローカル/Codespacesの Dev Container で動作させたり、GitHub Actions を使って定期的に記事情報を取得したり、リンクの使用状況を管理できます。
 
-- **自動リンク挿入ロジック**  
-  投稿本文内の指定キーワードに対して、事前に定義したリンク先 URL を挿入します。  
-  ※1記事あたりのリンク挿入数や、既存リンクの除外など、細かい制御が可能です。
+## 1. 概要
 
-- **WordPress 連携**  
-  WP REST API や WP-CLI＋SSH を利用して、対象の投稿を取得・更新します。  
-  認証情報は GitHub Actions の Secrets で安全に管理します。
+- **主な機能**  
+  1. **記事クローリング (crawl_links.py)**  
+     - WordPress REST API から対象サイトの記事一覧を取得し、`data/articles.json` に保存します。  
+     - `/media/column/` を含む投稿のみ抽出して管理対象としています。
+  
+  2. **リンク挿入 (insert_links.py)**  
+     - linkMapping.json（キーワード→URL対応） を基に、対象の WordPress 記事に内部リンクを挿入します。  
+     - WordPress の Basic 認証 (ユーザ名/パスワード) を用いて、POSTで記事を更新します。
 
-- **GitHub Actions による自動化**  
-  手動実行、スケジュール実行、プッシュ時など任意のトリガーでスクリプトを実行します。
+  3. **リンク使用状況検出 (detect_link_usage.py)**  
+     - （将来的には）挿入済みリンクを解析し、キーワードがどの記事で何回使われているかを `data/linkUsage.json` へ記録します。  
+     - 現在はテスト状態で、今後 GitHub Actions と組み合わせて運用する予定です。
 
-- **バージョン管理**  
-  投稿本文やリンク設定ファイルを GitHub 上で管理し、変更履歴を追跡可能にします。
+  4. **リンクマッピング管理 (manage_link_mapping.py)**  
+     - Streamlit アプリ。`data/linkMapping.json` と `data/linkUsage.json` を管理するツールです。  
+     - カテゴリごとのキーワード・URL 登録や、記事ごとのリンク使用可否などをGUIで編集可能です。
+  
+- **GitHub Actions ワークフロー**  
+  - **crawl-links.yml**  
+    - 週1回（または手動）で実行され、最新の WordPress 記事を取得 → `articles.json` を自動更新  
+  - **link-insertion.yml**  
+    - 手動トリガーで実行し、リンク挿入スクリプトを走らせます。  
+    - WordPress の URL / ユーザ名 / パスワードは GitHub Secrets 経由で注入します。  
+  - **link-usage-detect.yml**  
+    - リンク使用状況検出を行うワークフロー（サンプル）。必要に応じて拡張・運用します。
+  
+- **Dev Container (.devcontainer)**  
+  - Python 3.12 ベースのコンテナで、Streamlit や requests などをインストールし、`manage_link_mapping.py` を簡単に起動できます。  
+  - VSCode / GitHub Codespaces 上での開発を想定しています。
 
-## フォルダ構成
-以下はリポジトリの基本的なフォルダ構成例です。
-
+## 2. フォルダ構成
 
 ```
-my-internal-linker/
-├─ .github/
-│   └─ workflows/
-│       └─ link-insertion.yml   // GitHub Actionsワークフロー定義ファイル
+internal-link-auto-inserter/
+├─ .devcontainer/
+│   └─ devcontainer.json              # Python3.12ベースのコンテナ定義
+├─ .github/workflows/
+│   ├─ crawl-links.yml                # 記事クローラー(週1または手動)
+│   ├─ link-insertion.yml             # リンク挿入(手動実行)
+│   └─ link-usage-detect.yml          # リンク使用状況検出(サンプル)
 ├─ data/
-│   └─ linkMapping.json         // キーワードとURLのマッピング (例)
+│   ├─ linkMapping.json               # キーワード→URLマッピング
+│   ├─ linkUsage.json                 # リンク使用状況(記事ごとに何回挿入されたか)
+│   └─ articles.json                  # WordPressから取得した記事一覧(id/title/url)
 ├─ scripts/
-│   └─ insert_links.py          // Pythonスクリプト(または Node.js 等)
-└─ README.md
-
+│   ├─ crawl_links.py                 # WordPress記事クローリング
+│   ├─ detect_link_usage.py           # リンク使用状況の検出(未完成/拡張予定)
+│   ├─ insert_links.py                # WordPress記事へのリンク挿入
+│   ├─ manage_link_mapping.py         # Streamlitアプリ（リンク管理GUI）
+│   └─ ...
+├─ README.md                          # ← (本ファイル。運用手順などを記載)
+├─ packages.txt                       # aptパッケージ一覧
+└─ requirements.txt                   # pipパッケージ一覧 (streamlit, requests 等)
 ```
 
-1. **`.github/workflows/check_404.yml`**  
-   - GitHub Actionsで定期実行するためのワークフローファイルです。  
-2. **`scripts/check_404.py`**  
-   - サイトマップを読み取り、URLを抽出して404を検出し、Slackに通知するPythonスクリプト。  
-3. **`requirements.txt`**  
-   - `requests`など、Pythonスクリプト実行に必要なライブラリを明記します。  
-4. **`README.md`**  
-   - セットアップ手順や使い方をドキュメント化しておくと、プロジェクトのメンバーや将来の運用で助かります。
+## 3. セットアップ手順
 
----
+### 3.1 Dev Container / Codespaces を使用する場合
 
+1. 本リポジトリを [GitHub Codespaces](https://docs.github.com/ja/codespaces) か VSCode の Dev Container で開きます。  
+2. Dev Container が起動すると、`requirements.txt` と `packages.txt` がインストールされます。  
+3. コンテナ起動後、`manage_link_mapping.py` を自動的に Streamlit で立ち上げる設定になっています。  
+   - `localhost:8501` / Codespaces の場合はポート転送でアクセスしてください。  
+4. Webブラウザ（VSCodeのプレビュー or 外部ブラウザ）でアクセスし、リンクマッピングや使用状況をGUI上で操作できます。
 
-## 主な実装手順
+### 3.2 ローカルPC（Dev Containerを使わない場合）
 
-### 1. 要件定義
-- **自動リンク挿入ロジック**  
-  キーワードとリンク先 URL のマッピングを元に、投稿本文中に自動でリンクを挿入する処理を設計します。  
-  ※重複挿入防止、リンク挿入回数の制限などのルールも検討します。
+1. Python 3.12 以上がインストールされていることを確認します。  
+2. リポジトリをクローン後、`pip install -r requirements.txt` を実行して依存関係を導入します。
+3. `scripts/manage_link_mapping.py` を起動し、Streamlitアプリを使う場合:
+   ```bash
+   streamlit run scripts/manage_link_mapping.py --server.enableCORS false --server.enableXsrfProtection false
+   ```
+   - ポート番号はデフォルト8501 です。  
 
-- **WordPress 連携**  
-  投稿本文の取得・更新には WP REST API（または WP-CLI＋SSH）を利用し、認証情報は GitHub Secrets で管理します。
+## 4. 主要スクリプトの使い方
 
-- **自動化の仕組み**  
-  GitHub Actions を用いて、任意のトリガー（例：手動実行、スケジュール実行、プッシュ時）でスクリプトを実行します。
+### 4.1 記事クローリング: `crawl_links.py`
 
-### 2. リポジトリ構築とフォルダ作成
-上記のフォルダ構成に沿って、GitHub リポジトリを作成してください。
+- WordPress REST API を使用して記事情報を取得 → `data/articles.json` に上書き保存します。  
+- 例:  
+  ```bash
+  python scripts/crawl_links.py
+  ```
+- GitHub Actions (`.github/workflows/crawl-links.yml`) により週1回自動実行 + コミットされる設定になっています。
 
-### 3. スクリプト実装例
+### 4.2 リンク挿入: `insert_links.py`
 
-#### 3-1. 設定ファイルの読み込み
+- `data/linkMapping.json`（キーワードとリンク先URLの対応表）を読み込み、WordPressの記事に内部リンクを挿入します。  
+- WordPress の更新には Basic 認証を使用するため、以下の環境変数を設定してください:
+  - `WP_URL` … 例: `https://example.com`
+  - `WP_USERNAME` … Basic 認証ユーザ名
+  - `WP_PASSWORD` … Basic 認証パスワード
+- 例:  
+  ```bash
+  WP_URL="https://example.com" \
+  WP_USERNAME="my-user" \
+  WP_PASSWORD="my-pass" \
+  python scripts/insert_links.py
+  ```
+- GitHub Actions (`.github/workflows/link-insertion.yml`) で手動実行した場合も同様に Secrets を注入します。
 
-```
-python
-import json
+### 4.3 リンク使用状況検出: `detect_link_usage.py`
 
-def load_link_mapping(path='data/linkMapping.json'):
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+- 現状はサンプル実装です。記事本文を取得し、既に挿入されたリンクを解析して `data/linkUsage.json` に書き込む想定です。  
+- 今後、頻度制御や重複挿入チェックなどを行いたい場合に活用してください。
 
-※ JSON ファイルを読み込み、 {"キーワード": "URL", ...} の形式でマッピングデータを取得します。
+### 4.4 Streamlit管理ツール: `manage_link_mapping.py`
 
-3-2. 投稿データの取得
+- `data/linkMapping.json` や `data/linkUsage.json` をGUIで編集し、GitHub へコミットまで行うことができます。  
+- **カテゴリー** → **キーワード一覧** → **URL** の構成で管理可能です。  
+- 記事ごとに「このキーワードを挿入する／しない」の制御を手動で行うこともできます。
 
-import requests
+## 5. GitHub Actions
 
-def get_post_content(post_id, wp_url, wp_username, wp_password):
-    response = requests.get(
-        f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
-        auth=(wp_username, wp_password)
-    )
-    data = response.json()
-    return data.get('content', {}).get('rendered', '')
+- [**crawl-links.yml**](.github/workflows/crawl-links.yml)  
+  - **毎週月曜午前3時**(cron)に自動実行  
+  - 手動トリガーも可能  
+  - 取得した `articles.json` を GitHub に自動コミット
+- [**link-insertion.yml**](.github/workflows/link-insertion.yml)  
+  - **手動トリガーのみ**  
+  - 環境変数 (Secrets) を使ってリンク挿入を実行
+- [**link-usage-detect.yml**](.github/workflows/link-usage-detect.yml)  
+  - （現在はサンプルのみ。運用時は適宜設定）
 
-※ WP REST API を利用して、対象投稿の本文 (HTML) を取得します。
+## 6. データファイルの役割
 
-3-3. テキストのパース & リンク挿入
+- `data/articles.json`  
+  - WordPress REST API からクローリングした記事リスト。  
+  - `id`, `title`, `url` の最低限の情報を保持。
+- `data/linkMapping.json`  
+  - 内部リンクにしたい **キーワード** と **URL** のマッピング。  
+  - カテゴリ単位で整理しており、Streamlit管理ツールで追加・削除・編集できます。
+- `data/linkUsage.json`  
+  - 挿入済みリンクの記録。  
+  - キーワードごとに、「どの記事に何回挿入したか」を集計する想定。
 
-import re
+## 7. 注意事項・運用のポイント
 
-def insert_links_to_content(content, link_mapping, max_links_per_post=3):
-    links_added = 0
-    for keyword, url in link_mapping.items():
-        if links_added >= max_links_per_post:
-            break
-        pattern = rf'(?<!<a[^>]*>)(?P<kw>{re.escape(keyword)})(?![^<]*<\/a>)'
-        def replacement(match):
-            nonlocal links_added
-            if links_added < max_links_per_post:
-                links_added += 1
-                return f'<a href="{url}">{match.group("kw")}</a>'
-            else:
-                return match.group("kw")
-        content = re.sub(pattern, replacement, content, count=1)
-    return content
-```
+- **WordPress への更新権限**  
+  - `insert_links.py` を実行すると投稿が直接更新されます。  
+  - 実行前に必ずテスト環境やステージングで動作確認することを推奨します。
+- **挿入回数の管理**  
+  - 現在は1記事あたりキーワード1回までを想定した置換ロジックです。  
+  - 既にリンク付きになっている箇所は再挿入しない仕組みになっていますが、過剰に挿入されないよう注意してください。
+- **記事本文のブロック崩れ**  
+  - `insert_links.py` は WordPress の raw コンテンツをダイレクトに書き換えます。  
+  - 特殊なブロック構成の場合、予期せぬ崩れが生じる可能性があるため事前テストを必ず実施してください。
 
-※ キーワードに対して、既にリンクが存在しない箇所にリンクを挿入する処理を実装します。
+## 8. ライセンス
 
-3-4. 投稿内容の更新
-python
-Copy
-
-def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
-    payload = {
-        'content': new_content
-    }
-    response = requests.post(
-        f"{wp_url}/wp-json/wp/v2/posts/{post_id}",
-        json=payload,
-        auth=(wp_username, wp_password)
-    )
-    return response.status_code, response.text
-
-※ 更新後の本文を WP REST API 経由で WordPress に反映します。
-
-3-5. メイン実行関数の例
-
-def main():
-    # リンクマッピングの読み込み
-    link_mapping = load_link_mapping('data/linkMapping.json')
-    
-    # 対象投稿IDのリスト（例として固定のIDリスト）
-    post_ids = [1, 2, 3]
-    
-    # WordPress 接続情報（GitHub Actions の Secrets で管理）
-    wp_url = "https://example.com"
-    wp_username = "myuser"
-    wp_password = "mypassword"
-    
-    for pid in post_ids:
-        original_content = get_post_content(pid, wp_url, wp_username, wp_password)
-        updated_content = insert_links_to_content(original_content, link_mapping)
-        status, res_text = update_post_content(pid, updated_content, wp_url, wp_username, wp_password)
-        print(f"Updated post {pid}: status={status}")
-
-4. GitHub Actions の設定例
-以下は、.github/workflows/link-insertion.yml の設定例です。
-
-yaml
-Copy
-name: Internal Link Insertion
-
-on:
-  workflow_dispatch:   # 手動実行
-  schedule:
-    - cron: '0 3 * * *'   # 毎日午前3時に実行する例
-
-jobs:
-  link-insertion-job:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run link insertion script
-        env:
-          WP_URL: ${{ secrets.WP_URL }}
-          WP_USERNAME: ${{ secrets.WP_USERNAME }}
-          WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
-        run: |
-          python scripts/insert_links.py
-
-※ GitHub Secrets にて WP_URL、WP_USERNAME、WP_PASSWORD を設定し、セキュアな環境で実行します。
-
-テスト・検証フェーズ
-ステージング環境での検証
-テスト用の WordPress 環境で、リンク挿入の挙動を確認します。
-
-少数記事での動作チェック
-限定的な記事に対して実行し、意図しない改変がないか検証します。
-
-特殊ケースのテスト
-・既にリンクが設定済みのキーワード
-・同一キーワードが複数存在する場合
-・複雑な HTML タグの中での処理など
-
-運用と拡張
-キーワード・URL リストの更新
-data/linkMapping.json を更新し、Git プッシュすることで即座に反映可能です。
-
-リンク挿入ロジックの改善
-挿入頻度やマッチングルールの調整、部分一致・完全一致の切り替え等、運用状況に応じて拡張できます。
-
-リンク切れチェックやレポート生成
-挿入結果のログ取得や、リンク先の 404 チェックなどを追加実装することで、運用の精度を高められます。
-
-免責事項
-本プロジェクトは、内部リンク自動挿入の一例として提供しています。実際の運用にあたっては、十分なテストと検証を行ってください。
-
-ライセンス
-本プロジェクトは MIT License の下で公開されています。
-
-
----
-
-上記の内容をベースに、必要に応じてカスタマイズ・拡張してご利用ください。
+- 本リポジトリのスクリプト部分は MIT License 等で運用を想定しています（実プロジェクトの方針にあわせて適宜設定してください）。
+- WordPress から取得する記事データ（`articles.json` など）は、あくまで管理目的に限り社内/個人用にご利用ください。
 
 
 
