@@ -1,5 +1,5 @@
 # 内部リンク自動挿入システム
-# internal-link-auto-inserter
+## internal-link-auto-inserter
 
 WordPress の投稿記事へ自動的に内部リンクを挿入するためのスクリプトや管理ツールをまとめたリポジトリです。  
 ローカル/Codespacesの Dev Container で動作させたり、GitHub Actions を使って定期的に記事情報を取得したり、リンクの使用状況を管理できます。
