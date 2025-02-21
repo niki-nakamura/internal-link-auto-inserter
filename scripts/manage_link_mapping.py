@@ -224,18 +224,21 @@ def link_mapping_management():
 def link_usage_view():
     st.subheader("リンク使用状況 (linkUsage.json)")
     link_usage = load_json(LINK_USAGE_JSON_PATH)
-    articles_data = load_json(ARTICLES_JSON_PATH)  # 記事タイトルの参照用
+    articles_data = load_json(ARTICLES_JSON_PATH)  # 記事タイトルとURLを参照するため
 
     if not link_usage:
         st.info("まだ使用状況が記録されていません。")
         return
 
-    # 同じ記事に複数回挿入された箇所を検知
+    # 同じ記事に複数回挿入された箇所を検知するためのリスト
     multiple_insert_anomalies = []  # [(kw, article_id, count), ...]
 
     # --- キーワードごとに列挙 ---
     for kw, usage_info in link_usage.items():
+        # キーワードの見出し
         st.markdown(f"### キーワード: {kw}")
+
+        # linkMapping.jsonで登録されているURL
         usage_url = usage_info.get("url", "")
         st.write(f"- 登録URL: {usage_url}")
 
@@ -245,28 +248,37 @@ def link_usage_view():
             total_inserts = sum(articles_dict.values())
             st.write(f"- 合計挿入回数: {total_inserts}")
 
-            # 使用内訳
             with st.expander("使用内訳を表示"):
                 for article_id, count in articles_dict.items():
+                    # 2回以上なら後でエラー表示
                     if count > 1:
                         multiple_insert_anomalies.append((kw, article_id, count))
-                        st.write(f"  - **記事ID: {article_id} → {count}回 (要確認)**")
+
+                    # articles.jsonから該当記事を探す
+                    found_article = next((a for a in articles_data if a["id"] == article_id), None)
+                    if found_article:
+                        art_title = found_article["title"]
+                        art_url = found_article["url"]
+                        # 表示例：「・記事：タイトル (URL) → 挿入回数X回」
+                        st.write(
+                            f"- **記事**: [{art_title}]({art_url})  "
+                            f"→ 挿入回数: {count}"
+                        )
                     else:
-                        st.write(f"  - 記事ID: {article_id} → {count}回 挿入")
+                        # 見つからない場合
+                        st.write(f"- 記事ID: {article_id} (articles.jsonに存在しません) → {count}回")
         else:
             st.write("- まだ使用記録がありません。")
 
-    # --- 複数回挿入アノマリー ---
+    # --- 2回以上挿入アノマリーを警告 ---
     if multiple_insert_anomalies:
         st.error("【要注意】同じ記事に複数回リンクが挿入されているケースがあります！")
         for (kw, art_id, c) in multiple_insert_anomalies:
-            # 記事タイトルを探して表示
-            title_text = None
-            for a in articles_data:
-                if a["id"] == art_id:
-                    title_text = a["title"]
-                    break
-            if not title_text:
+            # 記事タイトルを探して補足表示
+            found_article = next((a for a in articles_data if a["id"] == art_id), None)
+            if found_article:
+                title_text = found_article["title"]
+            else:
                 title_text = "（記事不明）"
             st.write(f"- キーワード『{kw}』 : 記事ID={art_id}, タイトル={title_text}, 挿入回数={c}")
 
@@ -281,22 +293,26 @@ def link_usage_view():
             if art_id not in article_usage_summary:
                 article_usage_summary[art_id] = {
                     "title": None,
+                    "url": None,
                     "total_link_count": 0,
                     "details": {}
                 }
             article_usage_summary[art_id]["total_link_count"] += c
             article_usage_summary[art_id]["details"][kw] = c
 
-    # 記事タイトルを補完
+    # articles.jsonからタイトル・URLを補完
     for art in articles_data:
         if art["id"] in article_usage_summary:
             article_usage_summary[art["id"]]["title"] = art["title"]
+            article_usage_summary[art["id"]]["url"] = art["url"]
 
+    # テーブルやリストで出力
     if article_usage_summary:
         st.table([
             {
                 "記事ID": art_id,
                 "タイトル": (info["title"] or "（記事情報なし）"),
+                "URL": (info["url"] or ""),
                 "リンク挿入合計": info["total_link_count"],
                 "キーワード詳細": ", ".join([f"{kw}={cnt}" for kw, cnt in info["details"].items()])
             }
@@ -305,11 +321,10 @@ def link_usage_view():
     else:
         st.info("まだリンクが挿入された記事はありません。")
 
-    # 必要に応じてGitHubコミット
+    # GitHubコミットボタン（任意）
     if st.button("使用状況をGitHubへコミット"):
         usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
         commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Update linkUsage.json from Streamlit")
-
 
 # ===================================
 # タブ3: WordPress記事一覧管理 (articles.json)
