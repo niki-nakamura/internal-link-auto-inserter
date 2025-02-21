@@ -1,7 +1,7 @@
 name: Internal Link Insertion
 
 on:
-  workflow_dispatch:   # 手動実行のみ
+  workflow_dispatch:   # 手動実行
 
 jobs:
   link-insertion-job:
@@ -24,4 +24,5 @@ jobs:
           WP_URL: ${{ secrets.WP_URL }}
           WP_USERNAME: ${{ secrets.WP_USERNAME }}
           WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
-        run: python scripts/insert_links.py
+        run: |
+          python scripts/insert_links.py
