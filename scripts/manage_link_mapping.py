@@ -15,9 +15,9 @@ def get_auth_headers(username, password):
         "Content-Type": "application/json"
     }
 
-def get_post_raw_content(post_id, wp_url, wp_username, wp_password):
-    headers = get_auth_headers(wp_username, wp_password)
-    resp = requests.get(f"{wp_url}/wp-json/wp/v2/posts/{post_id}?context=edit", headers=headers)
+def get_post_raw_content(post_id, WP_URL, WP_USERNAME, WP_PASSWORD):
+    headers = get_auth_headers(WP_USERNAME, WP_PASSWORD)
+    resp = requests.get(f"{WP_URL}/wp-json/wp/v2/posts/{post_id}?context=edit", headers=headers)
     if resp.status_code != 200:
         print(f"[WARN] get_post_raw_content: status={resp.status_code}, post_id={post_id}")
         return ""
@@ -64,13 +64,13 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
     content = re.sub(r"__SHORTCODE_(\d+)__", shortcode_restore, content)
     return content
 
-def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
-    headers = get_auth_headers(wp_username, wp_password)
+def update_post_content(post_id, new_content, WP_URL, WP_USERNAME, WP_PASSWORD):
+    headers = get_auth_headers(WP_USERNAME, WP_PASSWORD)
     payload = {"content": new_content}
-    resp = requests.post(f"{wp_url}/wp-json/wp/v2/posts/{post_id}", json=payload, headers=headers)
+    resp = requests.post(f"{WP_URL}/wp-json/wp/v2/posts/{post_id}", json=payload, headers=headers)
     return resp.status_code, resp.text
 
-def run_insert_links(articles_data, link_usage, wp_url, wp_username, wp_password):
+def run_insert_links(articles_data, link_usage, WP_URL, WP_USERNAME, WP_PASSWORD):
     """
     link_usage:
       {
@@ -102,14 +102,14 @@ def run_insert_links(articles_data, link_usage, wp_url, wp_username, wp_password
         found_article = next((a for a in articles_data if a["id"] == art_id_str), None)
         title = found_article["title"] if found_article else "??"
 
-        raw_content = get_post_raw_content(post_id, wp_url, wp_username, wp_password)
+        raw_content = get_post_raw_content(post_id, WP_URL, WP_USERNAME, WP_PASSWORD)
         if not raw_content:
             print(f"[WARN] No content for {post_id} ({title}), skip.")
             continue
 
         updated_content = insert_links_to_content(raw_content, kw_map, max_links_per_post=3)
         if updated_content != raw_content:
-            status, txt = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
+            status, txt = update_post_content(post_id, updated_content, WP_URL, WP_USERNAME, WP_PASSWORD)
             print(f"Updated post {post_id} ({title}), status={status}")
         else:
             print(f"No changes for post {post_id} ({title}).")
@@ -404,9 +404,9 @@ def article_based_link_management():
     st.subheader("記事別リンク管理（手動）: 複数記事に一括でリンクON/OFF設定 & WP更新")
 
     # WP接続情報
-    wp_url      = st.secrets.get("WP_URL", "")
-    wp_username = st.secrets.get("WP_USERNAME", "")
-    wp_password = st.secrets.get("WP_PASSWORD", "")
+    WP_URL      = st.secrets.get("WP_URL", "")
+    WP_USERNAME = st.secrets.get("WP_USERNAME", "")
+    WP_PASSWORD = st.secrets.get("WP_PASSWORD", "")
 
     nested_mapping = load_json(LINK_MAPPING_JSON_PATH)
     link_usage     = load_json(LINK_USAGE_JSON_PATH)
@@ -499,10 +499,10 @@ def article_based_link_management():
         st.success("linkUsage.json を更新しました。")
 
         # 2) WPに反映
-        if not (wp_url and wp_username and wp_password):
+        if not (WP_URL and WP_USERNAME and WP_PASSWORD):
             st.error("WP_URL / WP_USERNAME / WP_PASSWORD が設定されていません。")
             return
-        run_insert_links(articles_data, link_usage, wp_url, wp_username, wp_password)
+        run_insert_links(articles_data, link_usage, WP_URL, WP_USERNAME, WP_PASSWORD)
         st.success("WordPress記事を更新しました (選択記事に内部リンクを挿入)。")
 
         # 3) GitHubコミット (オプション)
