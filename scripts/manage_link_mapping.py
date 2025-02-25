@@ -367,8 +367,40 @@ def all_articles_link_management():
             if link_usage[kw].get("url") != url:
                 link_usage[kw]["url"] = url
 
-    # まず記事ごとの「リンク使用合計」を一覧表示
-    # （記事タイトル検索やキーワード検索のフィルタ）
+    # ① 画面上部に「キーワードのリンクON/OFF設定」欄を表示
+    st.write("### キーワードのリンクON/OFF（複数記事同時）")
+
+    # 先に「どのキーワードをON/OFFにするか」を決めるためにチェックを用意する
+    # （実際には記事が選択されてからON/OFFを反映）
+    # ただしUI的に、まだ記事を選択していない場合は全体のチェック状態が曖昧なので
+    # “仮チェック”として管理し、後段で実際のON/OFFに反映させる。
+    # → 今回は特に「全キーワードを一斉に」とはせず、キーワード欄はシンプルに表示だけしておきます
+    #    実際のON/OFF反映はボタン押下時に行う
+    st.info("下部でチェックした記事に対して、ここで選んだキーワードをON (挿入) or OFF (解除) にします。")
+
+    # キーワードの選択状態を保持
+    # ONにしたい: user wants to toggle them "on"
+    # OFFにしたい: user wants to toggle them "off"
+    # "No Change": 変更しない
+    # …など設計は自由ですが、ここではシンプルにON/OFFのcheckboxだけ用意します
+    # “ONにする”か“オフにする”を区別するために2種類のCheckboxを並べてもOK
+    # ここでは “ONにする” チェックで実装例:
+    on_kws = []
+    off_kws = []
+
+    st.write("#### → ONにしたいキーワード")
+    for kw in link_mapping_flat.keys():
+        if st.checkbox(kw, value=False, key=f"kw_on_{kw}"):
+            on_kws.append(kw)
+
+    st.write("#### → OFFにしたいキーワード")
+    for kw in link_mapping_flat.keys():
+        if st.checkbox(kw, value=False, key=f"kw_off_{kw}"):
+            off_kws.append(kw)
+
+    st.write("---")
+
+    # ② フィルタ・ソート
     st.write("### フィルタ・ソート")
     col1, col2, col3 = st.columns([3,3,2])
     f_article = col1.text_input("記事タイトル検索(一部一致)", key="usage_search_title").strip()
@@ -397,17 +429,16 @@ def all_articles_link_management():
             article_usage_summary[art_id]["details"].setdefault(kw, 0)
             article_usage_summary[art_id]["details"][kw] += cnt
 
-    # フィルタに応じてサマリを抽出
+    # フィルタ
     filtered_list = []
     for art_id, info in article_usage_summary.items():
-        # 記事タイトルにフィルタ
-        if f_article:
-            if f_article.lower() not in info["title"].lower():
-                continue
+        # 記事タイトルフィルタ
+        if f_article and (f_article.lower() not in info["title"].lower()):
+            continue
         # キーワードフィルタ
         if f_kw:
             # detailsにf_kwを含むkwがなければ除外
-            matched_kws = [kw for kw in info["details"].keys() if f_kw.lower() in kw.lower()]
+            matched_kws = [k for k in info["details"].keys() if f_kw.lower() in k.lower()]
             if not matched_kws:
                 continue
         filtered_list.append((art_id, info))
@@ -424,66 +455,66 @@ def all_articles_link_management():
 
     st.write(f"#### 該当記事数: {len(filtered_list)}")
 
-    # マルチ選択 (一括操作したい記事)
-    display_options = [f"{art_id} | {info['title']}" for (art_id, info) in filtered_list]
-    selected_articles_disp = st.multiselect("一括操作する記事を選択（複数可）", display_options)
+    # ③ 記事一覧をチェックボックス形式で表示（複数選択可）
     selected_articles = []
-    for disp in selected_articles_disp:
-        _id = disp.split("|")[0].strip()
-        selected_articles.append(_id)
-
-    # 記事一覧表示 (参考用)
     for art_id, info in filtered_list:
-        st.markdown(f"**{info['title']}** (ID={art_id}) [ [記事URL]({info['url']}) ]")
+        # ラベル
+        label = f"{info['title']} (ID={art_id})  [ 記事URL ]({info['url']})"
+        # 記事選択用チェックボックス
+        is_checked = st.checkbox(label, value=False, key=f"art_select_{art_id}")
+        # リンク数表示
         if info["total_link_count"] == 0:
             st.write("- 内部リンクはありません。")
         else:
             detail_txt = ", ".join([f"{k}({c}回)" for k,c in info["details"].items()])
             st.write(f"- リンク挿入合計: {info['total_link_count']} ( {detail_txt} )")
 
-    # --- キーワードのON/OFF切替 ---
+        # 選択ならリストに追加
+        if is_checked:
+            selected_articles.append(art_id)
+
     st.write("---")
-    st.write("### 選択した記事に対してキーワードのリンクON/OFF設定")
-    if not selected_articles:
-        st.info("記事が選択されていません。上の一覧から操作対象の記事を選んでください。")
-        return
-
-    changed = False
-    # link_mapping_flat のキーワード一覧をチェックボックスでON/OFF
-    for kw, url in link_mapping_flat.items():
-        usage_info = link_usage.setdefault(kw, {"url": url, "articles_used_in": {}})
-        used_in = usage_info["articles_used_in"]
-        # 選択記事が全てONかどうか
-        all_on = all(art_id in used_in for art_id in selected_articles)
-        new_val = st.checkbox(f"{kw}", value=all_on, key=f"chk_{kw}")
-        if new_val != all_on:
-            changed = True
-            if new_val:
-                # ON
-                for art_id in selected_articles:
-                    used_in[art_id] = 1  # 回数は仮に1
-            else:
-                # OFF
-                for art_id in selected_articles:
-                    used_in.pop(art_id, None)
-
-    if changed:
-        st.warning("キーワードのON/OFF変更がありました。まだ保存されていません。")
-
-    if st.button("変更を保存 & WordPress更新"):
-        # 1) linkUsage.jsonに保存
-        save_json_locally(link_usage, LINK_USAGE_FILE_PATH)
-        st.success("linkUsage.json を保存しました。")
-
-        # 2) WP更新 (選択記事に対してリンク挿入)
-        if not (WP_URL and WP_USERNAME and WP_PASSWORD):
-            st.error("環境変数 WP_URL / WP_USERNAME / WP_PASSWORD が設定されていません。WP更新はスキップします。")
+    st.write("### 変更を保存 & WordPress更新")
+    if st.button("上記選択のON/OFF変更を反映"):
+        # 反映対象の記事がなければスキップ
+        if not selected_articles:
+            st.warning("記事が1つも選択されていません。")
             return
 
-        run_insert_links(articles_data, link_usage, WP_URL, WP_USERNAME, WP_PASSWORD)
-        st.success("選択記事へのリンク挿入（WP更新）を完了しました。")
+        # linkUsage.json に反映
+        #   - on_kws に含まれるキーワード → 選択された記事を articles_used_in に追加
+        #   - off_kws に含まれるキーワード → 選択された記事を articles_used_in から削除
+        changed = False
+        for kw in on_kws:
+            usage_info = link_usage.setdefault(kw, {"url": link_mapping_flat[kw], "articles_used_in": {}})
+            for art_id in selected_articles:
+                if art_id not in usage_info["articles_used_in"]:
+                    usage_info["articles_used_in"][art_id] = 1
+                    changed = True
 
-        # 3) GitHubコミット (必要に応じて)
+        for kw in off_kws:
+            usage_info = link_usage.setdefault(kw, {"url": link_mapping_flat[kw], "articles_used_in": {}})
+            for art_id in selected_articles:
+                if art_id in usage_info["articles_used_in"]:
+                    del usage_info["articles_used_in"][art_id]
+                    changed = True
+
+        if not changed:
+            st.info("ON/OFF変更がありませんでした。")
+            return
+
+        # 1) linkUsage.json 保存
+        save_json_locally(link_usage, LINK_USAGE_FILE_PATH)
+        st.success("linkUsage.json を更新しました。")
+
+        # 2) WordPress記事更新
+        if not (WP_URL and WP_USERNAME and WP_PASSWORD):
+            st.error("WP_URL / WP_USERNAME / WP_PASSWORD が未設定のため、WP更新をスキップします。")
+            return
+        run_insert_links(articles_data, link_usage, WP_URL, WP_USERNAME, WP_PASSWORD)
+        st.success("選択記事へのリンク挿入を完了しました。")
+
+        # 3) GitHubコミット (オプション)
         if st.checkbox("linkUsage.json をGitHubへコミットする", value=False):
             usage_str = json.dumps(link_usage, ensure_ascii=False, indent=2)
             commit_to_github(usage_str, LINK_USAGE_FILE_PATH, "Update linkUsage.json & WP updated")
@@ -538,7 +569,7 @@ def articles_management():
                 st.warning(f"最大ページ {max_pages} に達したので打ち切りました。")
                 break
 
-        # '/media/column/' を含む投稿のみ抽出する例
+        # '/media/column/' を含む投稿のみ抽出
         filtered = []
         for p in all_posts:
             link = p.get("link", "")
