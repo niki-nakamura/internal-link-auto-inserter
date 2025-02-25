@@ -102,7 +102,8 @@ def main():
     for kw, usage_info in link_usage.items():
         link_url = usage_info.get("url", "")
         for art_id in usage_info.get("articles_used_in", {}).keys():
-    
++           article_to_kws.setdefault(art_id, {})[kw] = link_url
+
     for art_id, kw_map in article_to_kws.items():
         post_id = int(art_id)
         found_article = next((a for a in articles if a["id"] == art_id), None)
