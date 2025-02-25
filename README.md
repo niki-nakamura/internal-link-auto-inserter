@@ -1,168 +1,153 @@
-# 内部リンク自動挿入システム
-## internal-link-auto-inserter
 
-WordPress の投稿記事へ自動的に内部リンクを挿入するためのスクリプトや管理ツールをまとめたリポジトリです。  
-ローカル/Codespacesの Dev Container で動作させたり、GitHub Actions を使って定期的に記事情報を取得したり、リンクの使用状況を管理できます。
 
-## 1. 概要
+# internal-link-auto-inserter
 
-- **主な機能**  
-  1. **記事クローリング (crawl_links.py)**  
-     - WordPress REST API から対象サイトの記事一覧を取得し、`data/articles.json` に保存します。  
-     - `/media/column/` を含む投稿のみ抽出して管理対象としています。
-  
-  2. **リンク挿入 (insert_links.py)**  
-     - linkMapping.json（キーワード→URL対応） を基に、対象の WordPress 記事に内部リンクを挿入します。  
-     - WordPress の Basic 認証 (ユーザ名/パスワード) を用いて、POSTで記事を更新します。
+特定の WordPress 記事に対して「内部リンク挿入」を自動・半自動化するためのリポジトリです。  
+以下のようなフローで、記事の取得・リンクマッピング・自動挿入・使用状況の可視化を行います。
 
-  3. **リンク使用状況検出 (detect_link_usage.py)**  
-     - （将来的には）挿入済みリンクを解析し、キーワードがどの記事で何回使われているかを `data/linkUsage.json` へ記録します。  
-     - 現在はテスト状態で、今後 GitHub Actions と組み合わせて運用する予定です。
+## 機能概要
 
-  4. **リンクマッピング管理 (manage_link_mapping.py)**  
-     - Streamlit アプリ。`data/linkMapping.json` と `data/linkUsage.json` を管理するツールです。  
-     - カテゴリごとのキーワード・URL 登録や、記事ごとのリンク使用可否などをGUIで編集可能です。
-  
-- **GitHub Actions ワークフロー**  
-  - **crawl-links.yml**  
-    - 週1回（または手動）で実行され、最新の WordPress 記事を取得 → `articles.json` を自動更新  
-  - **link-insertion.yml**  
-    - 手動トリガーで実行し、リンク挿入スクリプトを走らせます。  
-    - WordPress の URL / ユーザ名 / パスワードは GitHub Secrets 経由で注入します。  
-  - **link-usage-detect.yml**  
-    - リンク使用状況検出を行うワークフロー（サンプル）。必要に応じて拡張・運用します。
-  
-- **Dev Container (.devcontainer)**  
-  - Python 3.12 ベースのコンテナで、Streamlit や requests などをインストールし、`manage_link_mapping.py` を簡単に起動できます。  
-  - VSCode / GitHub Codespaces 上での開発を想定しています。
+1. **記事一覧の取得 (crawl_links.py)**  
+   WordPress REST API から `/media/column/` を含む投稿を取得し、`data/articles.json` に保存します。
 
-## 2. フォルダ構成
+2. **リンクマッピング (linkMapping.json)**  
+   - 「キーワード → リンク先URL」を登録し、さらにそれをカテゴリごとにまとめるファイルです。
+   - キーワードが記事本文内に登場した場合、そのテキストを `<a href="指定URL">...</a>` に自動変換したいときのマッピングを管理します。
 
-```
-internal-link-auto-inserter/
-├─ .devcontainer/
-│   └─ devcontainer.json              # Python3.12ベースのコンテナ定義
-├─ .github/workflows/
-│   ├─ crawl-links.yml                # 記事クローラー(週1または手動)
-│   ├─ link-insertion.yml             # リンク挿入(手動実行)
-│   └─ link-usage-detect.yml          # リンク使用状況検出(サンプル)
-├─ data/
-│   ├─ linkMapping.json               # キーワード→URLマッピング
-│   ├─ linkUsage.json                 # リンク使用状況(記事ごとに何回挿入されたか)
-│   └─ articles.json                  # WordPressから取得した記事一覧(id/title/url)
-├─ scripts/
-│   ├─ crawl_links.py                 # WordPress記事クローリング
-│   ├─ detect_link_usage.py           # リンク使用状況の検出(未完成/拡張予定)
-│   ├─ insert_links.py                # WordPress記事へのリンク挿入
-│   ├─ manage_link_mapping.py         # Streamlitアプリ（リンク管理GUI）
-│   └─ ...
-├─ README.md                          # ← (本ファイル。運用手順などを記載)
-├─ packages.txt                       # aptパッケージ一覧
-└─ requirements.txt                   # pipパッケージ一覧 (streamlit, requests 等)
+3. **リンク使用状況 (detect_link_usage.py & linkUsage.json)**  
+   - 現在、どの記事にどの内部リンク(キーワード)が挿入されているか、何回挿入されているかを可視化して管理するためのファイルです。
+
+4. **内部リンク自動挿入 (insert_links.py)**  
+   - `linkUsage.json` で「ON」(= `articles_used_in` に記載)になっている記事に対して、WordPress の記事本文(HTML)を取得し、キーワードをリンク化して再度記事を更新します。
+   - ひとつの記事あたり挿入するリンク数は最大3つ (暫定) に制限しています。
+
+5. **Streamlit GUI (manage_link_mapping.py)**  
+   - コンテナ起動時に Streamlit アプリが立ち上がり、Web UI から linkMapping, linkUsage, articles などを管理できるようにしています。
+
+## 開発環境のセットアップ
+
+本リポジトリには Dev Container (`.devcontainer/devcontainer.json`) の設定が含まれています。  
+VSCode などで[Dev Containers](https://containers.dev/) または [GitHub Codespaces](https://github.com/features/codespaces) を利用することで、コンテナ環境が自動で構築されます。
+
+### 1. リポジトリをクローン
+```bash
+git clone https://github.com/[YOUR-ACCOUNT]/internal-link-auto-inserter.git
+cd internal-link-auto-inserter
 ```
 
-## 3. セットアップ手順
+### 2. Dev Container / Codespaces で開く
+- VSCode の「Remote Containers」もしくは「Codespaces」を使用して、`.devcontainer` の設定に従ったコンテナを起動します。
 
-### 3.1 Dev Container / Codespaces を使用する場合
+### 3. コンテナ起動時の処理
+- `packages.txt` に書かれた APT パッケージがインストールされます。
+- `requirements.txt` に書かれた Python ライブラリがインストールされます。
+- `scripts/manage_link_mapping.py` が `streamlit` で自動起動し、ポート `8501` がフォワードされます。
 
-1. 本リポジトリを [GitHub Codespaces](https://docs.github.com/ja/codespaces) か VSCode の Dev Container で開きます。  
-2. Dev Container が起動すると、`requirements.txt` と `packages.txt` がインストールされます。  
-3. コンテナ起動後、`manage_link_mapping.py` を自動的に Streamlit で立ち上げる設定になっています。  
-   - `localhost:8501` / Codespaces の場合はポート転送でアクセスしてください。  
-4. Webブラウザ（VSCodeのプレビュー or 外部ブラウザ）でアクセスし、リンクマッピングや使用状況をGUI上で操作できます。
+ブラウザまたは VSCode の Port Forward 機能経由で `http://localhost:8501` (Codespaces の場合はリダイレクトURL) にアクセスすることで、
+GUI が利用可能です。
 
-### 3.2 ローカルPC（Dev Containerを使わない場合）
+## GitHub Actions 設定
 
-1. Python 3.12 以上がインストールされていることを確認します。  
-2. リポジトリをクローン後、`pip install -r requirements.txt` を実行して依存関係を導入します。
-3. `scripts/manage_link_mapping.py` を起動し、Streamlitアプリを使う場合:
-   ```bash
-   streamlit run scripts/manage_link_mapping.py --server.enableCORS false --server.enableXsrfProtection false
-   ```
-   - ポート番号はデフォルト8501 です。  
+### 1. [crawl-links.yml](.github/workflows/crawl-links.yml)
 
-## 4. 主要スクリプトの使い方
+- **週1回 (月曜午前3時) または手動** で起動
+- WordPress REST API から `/media/column/` を含む記事一覧を取得し、`data/articles.json` を更新・コミットします。
 
-### 4.1 記事クローリング: `crawl_links.py`
+```yaml
+name: Crawl links
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
-- WordPress REST API を使用して記事情報を取得 → `data/articles.json` に上書き保存します。  
-- 例:  
-  ```bash
-  python scripts/crawl_links.py
-  ```
-- GitHub Actions (`.github/workflows/crawl-links.yml`) により週1回自動実行 + コミットされる設定になっています。
+jobs:
+  run-crawl-links:
+    steps:
+      # 省略（詳細はファイルを参照）
+```
 
-### 4.2 リンク挿入: `insert_links.py`
+### 2. [link-usage-detect.yml](.github/workflows/link-usage-detect.yml)
 
-- `data/linkMapping.json`（キーワードとリンク先URLの対応表）を読み込み、WordPressの記事に内部リンクを挿入します。  
-- WordPress の更新には Basic 認証を使用するため、以下の環境変数を設定してください:
-  - `WP_URL` … 例: `https://example.com`
-  - `WP_USERNAME` … Basic 認証ユーザ名
-  - `WP_PASSWORD` … Basic 認証パスワード
-- 例:  
-  ```bash
-  WP_URL="https://example.com" \
-  WP_USERNAME="my-user" \
-  WP_PASSWORD="my-pass" \
-  python scripts/insert_links.py
-  ```
-- GitHub Actions (`.github/workflows/link-insertion.yml`) で手動実行した場合も同様に Secrets を注入します。
+- **週1回 (月曜午前3時) または手動** で起動
+- 取得済みの記事 (`data/articles.json`) を実際に GET して、HTML 内に既存で埋め込まれているリンクがどれだけあるかを解析し、`data/linkUsage.json` に保存・コミットします。
 
-### 4.3 リンク使用状況検出: `detect_link_usage.py`
+```yaml
+name: Detect link usage
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
 
-- 現状はサンプル実装です。記事本文を取得し、既に挿入されたリンクを解析して `data/linkUsage.json` に書き込む想定です。  
-- 今後、頻度制御や重複挿入チェックなどを行いたい場合に活用してください。
+jobs:
+  detect-link-usage:
+    steps:
+      # 省略（詳細はファイルを参照）
+```
 
-### 4.4 Streamlit管理ツール: `manage_link_mapping.py`
+### 3. [link-insertion.yml](.github/workflows/link-insertion.yml)
 
-- `data/linkMapping.json` や `data/linkUsage.json` をGUIで編集し、GitHub へコミットまで行うことができます。  
-- **カテゴリー** → **キーワード一覧** → **URL** の構成で管理可能です。  
-- 記事ごとに「このキーワードを挿入する／しない」の制御を手動で行うこともできます。
+- **手動起動** のみ
+- 環境変数 (GitHub Secrets) の `WP_URL`, `WP_USERNAME`, `WP_PASSWORD` を使い、実際の WordPress 記事にリンクを挿入 (更新) します。
 
-## 5. GitHub Actions
+```yaml
+name: Internal Link Insertion
+on:
+  workflow_dispatch:
 
-- [**crawl-links.yml**](.github/workflows/crawl-links.yml)  
-  - **毎週月曜午前3時**(cron)に自動実行  
-  - 手動トリガーも可能  
-  - 取得した `articles.json` を GitHub に自動コミット
-- [**link-insertion.yml**](.github/workflows/link-insertion.yml)  
-  - **手動トリガーのみ**  
-  - 環境変数 (Secrets) を使ってリンク挿入を実行
-- [**link-usage-detect.yml**](.github/workflows/link-usage-detect.yml)  
-  - （現在はサンプルのみ。運用時は適宜設定）
+jobs:
+  link-insertion-job:
+    steps:
+      # 省略（詳細はファイルを参照）
+```
 
-## 6. データファイルの役割
+## 主なスクリプト
 
-- `data/articles.json`  
-  - WordPress REST API からクローリングした記事リスト。  
-  - `id`, `title`, `url` の最低限の情報を保持。
-- `data/linkMapping.json`  
-  - 内部リンクにしたい **キーワード** と **URL** のマッピング。  
-  - カテゴリ単位で整理しており、Streamlit管理ツールで追加・削除・編集できます。
-- `data/linkUsage.json`  
-  - 挿入済みリンクの記録。  
-  - キーワードごとに、「どの記事に何回挿入したか」を集計する想定。
+### 1. `scripts/crawl_links.py`
+- WordPress の REST API から投稿を取得し、`/media/column/` を含む記事だけを `data/articles.json` に保存します。
 
-## 7. 注意事項・運用のポイント
+### 2. `scripts/detect_link_usage.py`
+- `articles.json` の URL にアクセスし、リンクマッピング (`linkMapping.json`) の URL が実際に HTML にいくつ含まれているかをカウント。
+- 結果を `linkUsage.json` に保存します。
 
-- **WordPress への更新権限**  
-  - `insert_links.py` を実行すると投稿が直接更新されます。  
-  - 実行前に必ずテスト環境やステージングで動作確認することを推奨します。
-- **挿入回数の管理**  
-  - 現在は1記事あたりキーワード1回までを想定した置換ロジックです。  
-  - 既にリンク付きになっている箇所は再挿入しない仕組みになっていますが、過剰に挿入されないよう注意してください。
-- **記事本文のブロック崩れ**  
-  - `insert_links.py` は WordPress の raw コンテンツをダイレクトに書き換えます。  
-  - 特殊なブロック構成の場合、予期せぬ崩れが生じる可能性があるため事前テストを必ず実施してください。
+### 3. `scripts/insert_links.py`
+- `linkUsage.json` を見て、「挿入対象記事 (articles_used_in)」となっている記事本文を取得。
+- 該当キーワードが見つかれば `<a href="...">...</a>` に置換し、記事を上書き更新します (WP API を使用)。
 
-## 8. ライセンス
+### 4. `scripts/manage_link_mapping.py` (Streamlit アプリ)
+- ブラウザ上で `linkMapping.json`, `linkUsage.json`, `articles.json` を管理可能なツール。
+- VSCode DevContainer / Codespaces 起動時に自動実行します（`port=8501` でアクセス）。
 
-- 本リポジトリのスクリプト部分は MIT License 等で運用を想定しています（実プロジェクトの方針にあわせて適宜設定してください）。
-- WordPress から取得する記事データ（`articles.json` など）は、あくまで管理目的に限り社内/個人用にご利用ください。
+## 利用手順の概要
 
+1. **WordPress の記事一覧取得**  
+   - 手動もしくは `crawl-links.yml` により `data/articles.json` を更新
 
+2. **linkMapping の編集**  
+   - Streamlit UI (localhost:8501) または直接 JSON ファイルを編集  
+   - 「キーワード → リンクURL」をカテゴリごとに登録
 
+3. **linkUsage の更新**  
+   - 手動もしくは `link-usage-detect.yml` により全記事をクロールし、実際に貼られているリンクを `data/linkUsage.json` に反映
 
+4. **リンク挿入**  
+   - Streamlit UI の「記事別リンク管理（手動）」タブなどで「ON」にしたい記事×キーワードを設定
+   - `link-insertion.yml` を手動実行 (GitHub Actions) あるいは `scripts/insert_links.py` をローカルで直接起動
 
+5. **最終チェック**  
+   - リンクが正しく挿入されているかを再度 `detect_link_usage.py` などで確認
 
+## 環境変数 / Secrets
 
+- **WP_URL**: WordPress の REST API を呼ぶベースURL (例: `https://example.com`)
+- **WP_USERNAME**: Basic 認証に使用するユーザー名 (WPユーザー)
+- **WP_PASSWORD**: Basic 認証に使用するパスワード
+- **GITHUB_TOKEN**: (オプション) GitHub API にコミットするときに使用
+
+GitHub Actions 実行時には [Repository Secrets](https://docs.github.com/ja/actions/security-guides/encrypted-secrets) にこれらを登録します。  
+ローカルや Codespaces で試す場合は `.env` や VSCode の「Settings」などに設定しても良いでしょう。
+
+## .devcontainer/devcontainer.json の動作
+
+- Python 3.12 ベースイメージ
+- `updateContentCommand` により、`packages.txt` と `requirements.txt` が自動インストール
+- `postAttachCommand` で `scripts/manage_link_mapping.py` (Streamlit) が自動起動
