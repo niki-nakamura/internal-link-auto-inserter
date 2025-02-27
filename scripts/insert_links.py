@@ -36,7 +36,18 @@ def get_post_raw_content(post_id, wp_url, wp_username, wp_password):
     data = resp.json()
     return data.get("content", {}).get("raw", "")
 
+def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
+    headers = get_auth_headers(wp_username, wp_password)
+    payload = {'content': new_content}
+    resp = requests.post(f"{wp_url}/wp-json/wp/v2/posts/{post_id}", json=payload, headers=headers)
+    print(f"update_post_content(post_id={post_id}): status={resp.status_code}")
+    return resp.status_code, resp.text
+
 def insert_links_to_content(content, link_mapping, max_links_per_post=3):
+    """
+    既存の内部リンク挿入ロジック。
+    link_mapping: { "キーワード": "URL", ... }
+    """
     links_added = 0
     shortcode_pattern = r'(\[.*?\])'
     shortcodes = []
@@ -45,8 +56,10 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
         shortcodes.append(m.group(0))
         return f"__SHORTCODE_{len(shortcodes)-1}__"
 
+    # ショートコードを一時退避
     content = re.sub(shortcode_pattern, shortcode_replacer, content)
 
+    # キーワードを本文中で検索し、最初に見つかった箇所だけ<a>に置き換え
     for kw, url in link_mapping.items():
         if links_added >= max_links_per_post:
             break
@@ -54,8 +67,10 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
         def replacement(m):
             nonlocal links_added
             text = m.group(0)
+            # 既にリンクになっている箇所はスキップ
             if text.lower().startswith("<a"):
                 return text
+            # 未リンク箇所をリンク化
             links_added += 1
             return f'<a href="{url}">{text}</a>'
 
@@ -63,6 +78,7 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
         if updated != content:
             content = updated
 
+    # ショートコードを復元
     def shortcode_restore(m):
         idx = int(m.group(1).split("_")[-1])
         return shortcodes[idx]
@@ -70,18 +86,44 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
 
     return content
 
-def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
-    headers = get_auth_headers(wp_username, wp_password)
-    payload = {'content': new_content}
-    resp = requests.post(f"{wp_url}/wp-json/wp/v2/posts/{post_id}", json=payload, headers=headers)
-    print(f"update_post_content(post_id={post_id}): status={resp.status_code}")
-    return resp.status_code, resp.text
+def remove_links_from_content(content, off_keywords):
+    """
+    OFFキーワードに該当するリンク(<a>...</a>)を削除（アンリンク）する。
+    <a href="...">キーワード</a> → キーワード へ置換する簡易実装。
+    ショートコードは insert_links_to_content() と同様に退避→復元。
+    """
+    shortcode_pattern = r'(\[.*?\])'
+    shortcodes = []
+
+    def shortcode_replacer(m):
+        shortcodes.append(m.group(0))
+        return f"__SHORTCODE_{len(shortcodes)-1}__"
+
+    # ショートコードを一時退避
+    content = re.sub(shortcode_pattern, shortcode_replacer, content)
+
+    # OFFキーワードを含む <a>タグ をアンリンク化
+    for kw in off_keywords:
+        escaped_kw = re.escape(kw)
+        # 例: <a href="...">飛行機</a> → 飛行機
+        pattern = rf'<a[^>]*>({escaped_kw})</a>'
+        content = re.sub(pattern, r'\1', content)
+
+    # ショートコード復元
+    def shortcode_restore(m):
+        idx = int(m.group(1).split("_")[-1])
+        return shortcodes[idx]
+    content = re.sub(r'__SHORTCODE_(\d+)__', shortcode_restore, content)
+
+    return content
 
 def main():
     """
     1) 環境変数から WP_URL, WP_USERNAME, WP_PASSWORD を取得
     2) linkUsage.json, articles.json をロード
-    3) linkUsage.json の "articles_used_in" が ON の記事IDごとにリンク挿入し、WP更新
+    3) linkUsage.json で「articles_used_in」にある記事 → ON扱い / 無い記事 → OFF扱い
+       OFF → remove_links_from_content()
+       ON  → insert_links_to_content()
     """
     wp_url = os.environ.get("WP_URL", "")
     wp_username = os.environ.get("WP_USERNAME", "")
@@ -97,24 +139,54 @@ def main():
         print("[ERROR] linkUsage.json or articles.json is empty. Abort.")
         return
 
-    # 記事IDごとの {キーワード:URL} を組み立て
-    article_to_kws = {}
-    for kw, usage_info in link_usage.items():
-        link_url = usage_info.get("url", "")
-        for art_id in usage_info.get("articles_used_in", {}).keys():
-+           article_to_kws.setdefault(art_id, {})[kw] = link_url
+    # 全キーワードを列挙
+    all_keywords = list(link_usage.keys())
 
-    for art_id, kw_map in article_to_kws.items():
+    # 記事IDごとに「ONで挿入すべきキーワード(Map)」「OFFで削除すべきキーワード(list)」を集計
+    article_to_on = {}   # { art_id: { kw: url, ... } }
+    article_to_off = {}  # { art_id: [kw1, kw2, ...] }
+
+    for kw in all_keywords:
+        url = link_usage[kw].get("url", "")
+        used_in = link_usage[kw].get("articles_used_in", {})
+
+        # ON対象のarticle_id
+        for art_id in used_in.keys():
+            article_to_on.setdefault(art_id, {})
+            article_to_on[art_id][kw] = url
+
+    # OFF対象は「articlesに存在するが used_in に含まれない記事ID」
+    # （＝以前リンクがあったかもしれないが、今はOFFになった記事）
+    # あるいは「今後も挿入しない記事」
+    all_article_ids = [a["id"] for a in articles]
+    for kw in all_keywords:
+        used_in = link_usage[kw].get("articles_used_in", {})
+        for art_id in all_article_ids:
+            if art_id not in used_in:
+                article_to_off.setdefault(art_id, [])
+                article_to_off[art_id].append(kw)
+
+    # 記事を一件ずつ処理: OFF→ON の順で書き換え
+    for art in articles:
+        art_id = art["id"]
         post_id = int(art_id)
-        found_article = next((a for a in articles if a["id"] == art_id), None)
-        art_title = found_article["title"] if found_article else "(不明)"
+        art_title = art.get("title", "(不明)")
 
         raw_content = get_post_raw_content(post_id, wp_url, wp_username, wp_password)
         if not raw_content:
-            print(f"[WARN] Article {art_id}({art_title}) -> skip, no content")
+            print(f"[WARN] Article {art_id} ({art_title}) -> skip, no content.")
             continue
 
-        updated_content = insert_links_to_content(raw_content, kw_map, max_links_per_post=3)
+        off_kws = article_to_off.get(art_id, [])
+        on_map  = article_to_on.get(art_id, {})
+
+        # (A) OFFキーワードを削除（アンリンク）
+        temp_content = remove_links_from_content(raw_content, off_kws)
+
+        # (B) ONキーワードを挿入
+        updated_content = insert_links_to_content(temp_content, on_map, max_links_per_post=3)
+
+        # 変化があればWP更新
         if updated_content != raw_content:
             status, _ = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
             print(f"Updated post {post_id}({art_title}), status={status}")
