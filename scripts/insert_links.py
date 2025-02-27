@@ -63,7 +63,6 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
     for kw, url in link_mapping.items():
         if links_added >= max_links_per_post:
             break
-        # 既にリンクがある箇所はスキップ（<a...>）
         pattern = rf'(<a[^>]*>.*?</a>|{re.escape(kw)})'
 
         def replacement(m):
@@ -88,11 +87,15 @@ def insert_links_to_content(content, link_mapping, max_links_per_post=3):
     content = re.sub(r'__SHORTCODE_(\d+)__', shortcode_restore, content)
     return content
 
-def remove_links_from_content(content, off_keywords):
+def remove_links_from_content(content, off_list):
     """
-    OFFキーワードに該当するリンク(<a>...</a>)を削除（アンリンク）する。
-    <a href="...">キーワード</a> → キーワード に戻す簡易実装。
+    OFF対象(kw, url)のリストに基づいて、「URLが一致するaタグをアンリンク化」する。
+    
+    <a href="{url}">任意のテキスト</a> を その「任意テキスト」のみに戻す。
+
     ショートコードは insert_links_to_content() と同様に退避→復元。
+    
+    off_list: [ (kw1, url1), (kw2, url2), ... ] (kwはデバッグ用)
     """
     shortcode_pattern = r'(\[.*?\])'
     shortcodes = []
@@ -104,14 +107,19 @@ def remove_links_from_content(content, off_keywords):
     # ショートコードを一時退避
     content = re.sub(shortcode_pattern, shortcode_replacer, content)
 
-    # OFFキーワードを含む <a>タグ をアンリンク化
-    for kw in off_keywords:
-        escaped_kw = re.escape(kw)
-        # 例: <a href="...">飛行機</a> → 飛行機
-        pattern = rf'<a[^>]*>({escaped_kw})</a>'
-        content = re.sub(pattern, r'\1', content)
+    # OFFリンク削除: URL一致ベース
+    for (kw, url) in off_list:
+        # 例: <a href="URL">...</a> → ... (テキストのみ)
+        #    [^>]* でhref以外の属性があってもマッチさせる
+        #    (.*?) はリンクテキストをキャプチャ
+        pattern = rf'<a[^>]*href\s*=\s*"{re.escape(url)}"[^>]*>(.*?)</a>'
 
-    # ショートコードを復元
+        before = content
+        content, num_replaced = re.subn(pattern, r'\1', content, flags=re.IGNORECASE|re.DOTALL)
+        if num_replaced > 0:
+            print(f"[DEBUG] Removed {num_replaced} link(s) for URL={url} (kw='{kw}')")
+
+    # ショートコード復元
     def shortcode_restore(m):
         idx = int(m.group(1).split("_")[-1])
         return shortcodes[idx]
@@ -124,7 +132,7 @@ def main():
     1) 環境変数から WP_URL, WP_USERNAME, WP_PASSWORD を取得
     2) linkUsage.json, articles.json をロード
     3) linkUsage.json で「articles_used_in」にある記事 → ON扱い / 無い記事 → OFF扱い
-       OFF → remove_links_from_content()
+       OFF → remove_links_from_content()  (URL一致で削除)
        ON  → insert_links_to_content()
        の順で更新し、WordPressに保存する
     """
@@ -142,33 +150,40 @@ def main():
         print("[ERROR] linkUsage.json or articles.json is empty. Abort.")
         return
 
-    # 全キーワードを列挙
+    # 全キーワード一覧
     all_keywords = list(link_usage.keys())
 
-    # 記事IDごとに「ONにしたいキーワード(Map)」「OFFにしたいキーワード(list)」を仕分け
-    article_to_on = {}   # { art_id: { kw: url, ... } }
-    article_to_off = {}  # { art_id: [kw1, kw2, ...] }
+    # 記事IDごとに:
+    #   ON用  -> { kw: url, ... }
+    #   OFF用 -> [(kw, url), (kw2, url2), ...]
+    article_to_on = {}
+    article_to_off = {}
 
-    # 「articles_used_in」に含まれている記事ID → ON
+    # 1) ON用マッピングを組み立てる (articles_used_inに含まれる記事)
     for kw in all_keywords:
-        url = link_usage[kw].get("url", "")
-        used_in = link_usage[kw].get("articles_used_in", {})
+        usage_info = link_usage[kw]
+        link_url   = usage_info.get("url", "")
+        used_in    = usage_info.get("articles_used_in", {})
+
         for art_id in used_in.keys():
             article_to_on.setdefault(art_id, {})
-            article_to_on[art_id][kw] = url
+            article_to_on[art_id][kw] = link_url
 
-    # すべての記事IDを取得
+    # 2) OFF用リストを組み立てる (逆に含まれていない記事)
     all_article_ids = [a["id"] for a in articles]
 
-    # OFF対象: 「全記事IDのうち、articles_used_inに含まれていないもの」
     for kw in all_keywords:
-        used_in = link_usage[kw].get("articles_used_in", {})
+        usage_info = link_usage[kw]
+        link_url   = usage_info.get("url", "")
+        used_in    = usage_info.get("articles_used_in", {})
+
         for art_id in all_article_ids:
             if art_id not in used_in:
+                # OFF対象 (kw, url)
                 article_to_off.setdefault(art_id, [])
-                article_to_off[art_id].append(kw)
+                article_to_off[art_id].append((kw, link_url))
 
-    # 記事ごとに OFF→ON を適用して WordPressに更新
+    # 3) 記事ごとに「OFF→ON」の順で実行
     for art in articles:
         art_id = art["id"]
         post_id = int(art_id)
@@ -179,20 +194,22 @@ def main():
             print(f"[WARN] Article {art_id} ({art_title}) -> skip, no content.")
             continue
 
-        off_kws = article_to_off.get(art_id, [])
-        on_map  = article_to_on.get(art_id, {})
+        off_list = article_to_off.get(art_id, [])
+        on_map   = article_to_on.get(art_id, {})
 
-        # OFFキーワード削除
-        temp_content = remove_links_from_content(raw_content, off_kws)
-        # ONキーワード挿入
+        # (A) OFFリンク削除 (URLが一致する<a>タグをアンリンク)
+        temp_content = remove_links_from_content(raw_content, off_list)
+
+        # (B) ONリンク挿入
         updated_content = insert_links_to_content(temp_content, on_map, max_links_per_post=3)
 
         # 変化があればWP更新
         if updated_content != raw_content:
-            status, _ = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
-            print(f"Updated post {post_id}({art_title}), status={status}")
+            print(f"[INFO] Article {art_id} ({art_title}) -> content changed, updating WP...")
+            status, resp_text = update_post_content(post_id, updated_content, wp_url, wp_username, wp_password)
+            print(f"  -> update_post_content status={status}")
         else:
-            print(f"No changes for post {post_id}({art_title}).")
+            print(f"[INFO] Article {art_id} ({art_title}) -> no changes")
 
 if __name__ == "__main__":
     main()
