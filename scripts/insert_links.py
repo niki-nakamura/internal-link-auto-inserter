@@ -43,10 +43,23 @@ def update_post_content(post_id, new_content, wp_url, wp_username, wp_password):
     print(f"update_post_content(post_id={post_id}): status={resp.status_code}")
     return resp.status_code, resp.text
 
-def insert_links_to_content(content, link_mapping, max_links_per_post=3):
+def insert_links_to_content(content, link_mapping, article_url, max_links_per_post=3):
     """
     link_mapping: { \"キーワード\": \"URL\", ... }
     """
+    
+    # セルフリンク禁止:
+    # 「link_mapping」の中で、この「article_url」と一致するURLを除外する。
+    filtered_mapping = {}
+    for kw, url in link_mapping.items():
+        # もしこのURLが記事URL（article_url）と同じなら、この記事では挿入しない
+        if url == article_url:
+            continue
+        filtered_mapping[kw] = url
+
+    # 以降の処理は、"自分自身へのリンク"を含まないフィルタ済みマッピングを使う
+    link_mapping = filtered_mapping
+    
     links_added = 0
     shortcode_pattern = r'(\\[.*?\\])'
     shortcodes = []
@@ -177,7 +190,8 @@ def main():
         # OFF
         temp_content = remove_off_links(raw_content, off_list)
         # ON
-        updated_content = insert_links_to_content(temp_content, on_map, max_links_per_post=3)
+        article_url = art["url"]  # この記事自身のURL
+        updated_content = insert_links_to_content(temp_content, on_map, article_url, max_links_per_post=3)
 
         if updated_content != raw_content:
             print(f\"[INFO] Updating post {post_id} ({art_title})...\")
