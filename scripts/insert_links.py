@@ -81,7 +81,7 @@ def insert_links_to_content(content, link_mapping, article_url, max_links_per_po
             nonlocal links_added
             text = m.group(0)
             # 既にリンク
-            if text.lower().startswith(\"<a\"):
+            if text.lower().startswith("<a"):
                 return text
             links_added += 1
             return f'<a href=\"{url}\">{text}</a>'
