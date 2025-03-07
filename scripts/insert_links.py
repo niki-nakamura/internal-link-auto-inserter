@@ -91,7 +91,7 @@ def insert_links_to_content(content, link_mapping, article_url, max_links_per_po
             content = updated
 
     def shortcode_restore(m):
-        idx = int(m.group(1).split(\"_\")[-1])
+        idx = int(m.group(1).split("_")[-1])
         return shortcodes[idx]
 
     content = re.sub(r'__SHORTCODE_(\\d+)__', shortcode_restore, content)
@@ -127,7 +127,7 @@ def remove_off_links(content, off_list):
         content = remove_links_by_url(content, url)
 
     def shortcode_restore(m):
-        idx = int(m.group(1).split(\"_\")[-1])
+        idx = int(m.group(1).split("_")[-1])
         return shortcodes[idx]
 
     content = re.sub(r'__SHORTCODE_(\\d+)__', shortcode_restore, content)
