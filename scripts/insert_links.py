@@ -106,7 +106,7 @@ def remove_links_by_url(content, url):
     before = content
     content, num_replaced = re.subn(pattern, r'\\1', content, flags=re.IGNORECASE|re.DOTALL)
     if num_replaced > 0:
-        print(f\"[DEBUG] Removed {num_replaced} link(s) for URL={url}\")
+        print(f"[DEBUG] Removed {num_replaced} link(s) for URL={url}")
     return content
 
 def remove_off_links(content, off_list):
