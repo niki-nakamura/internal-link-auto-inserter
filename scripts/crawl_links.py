@@ -51,11 +51,11 @@ def create_session_with_retries(
 
 def fetch_all_wp_posts(base_url: str, per_page=50, max_pages=10):
     session = create_session_with_retries(
-    　total_retries=3,
-    　backoff_factor=1.0,
-    　status_forcelist=(500, 502, 503, 504),
-    　read_timeout=30
-)
+        total_retries=3,
+        backoff_factor=1.0,
+        status_forcelist=(500, 502, 503, 504),
+        read_timeout=30
+    )
     
     all_posts = []
     page = 1
