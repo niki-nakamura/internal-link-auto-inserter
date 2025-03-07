@@ -430,6 +430,14 @@ def all_articles_link_management():
     f_kw      = col2.text_input("キーワード検索(一部一致)", key="usage_search_kw").strip()
     sort_opt  = col3.selectbox("ソート順", ["多い順", "少ない順", "記事ID昇順", "記事ID降順"], key="usage_sort")
 
+    if st.button("【一括】すべての記事に内部リンクを挿入する"):
+        if not (WP_URL and WP_USERNAME and WP_PASSWORD):
+            st.error("WP_URL / WP_USERNAME / WP_PASSWORD が未設定のため、WP更新をスキップします。")
+        else:
+            # 選択状況に関係なく、linkUsageに登録されている記事すべてへリンク挿入を実行
+            run_insert_links(articles_data, link_usage, WP_URL, WP_USERNAME, WP_PASSWORD)
+            st.success("すべての記事に対して内部リンクの一括挿入が完了しました。")
+    
     # 記事ID -> 合計リンク数, 内訳
     article_usage_summary = {}
     for art in articles_data:
