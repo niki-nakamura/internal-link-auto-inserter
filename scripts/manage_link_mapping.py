@@ -21,6 +21,29 @@ HEADERS = {
                   "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 }
 
+def password_protect():
+    pwd = st.text_input("Password:", type="password")
+    if pwd != st.secrets["APP_PASSWORD"]:
+        st.stop()  # 間違っていれば以降の表示を止める
+
+def main():
+    password_protect()
+    st.write("本アプリのメイン画面")
+
+# ===================================
+# session_state フラグを使った rerun の仕組み
+# ===================================
+def check_and_rerun_if_needed():
+    """
+    セッションステートに rerun フラグが立っていれば、ここで experimental_rerun を呼ぶ。
+    """
+    if "need_rerun" not in st.session_state:
+        st.session_state["need_rerun"] = False
+
+    if st.session_state["need_rerun"]:
+        st.session_state["need_rerun"] = False  # フラグをクリアしておく
+        st.experimental_rerun()
+
 # ===================================
 # ヘルパー関数 (JSON読み書き, GitHubコミット等)
 # ===================================
