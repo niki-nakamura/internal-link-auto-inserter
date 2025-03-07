@@ -66,7 +66,7 @@ def insert_links_to_content(content, link_mapping, article_url, max_links_per_po
 
     def shortcode_replacer(m):
         shortcodes.append(m.group(0))
-        return f\"__SHORTCODE_{len(shortcodes)-1}__\"
+        return f"__SHORTCODE_{len(shortcodes)-1}__"
 
     # ショートコード退避
     content = re.sub(shortcode_pattern, shortcode_replacer, content)
@@ -119,7 +119,7 @@ def remove_off_links(content, off_list):
 
     def shortcode_replacer(m):
         shortcodes.append(m.group(0))
-        return f\"__SHORTCODE_{len(shortcodes)-1}__\"
+        return f"__SHORTCODE_{len(shortcodes)-1}__"
 
     content = re.sub(shortcode_pattern, shortcode_replacer, content)
 
