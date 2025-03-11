@@ -134,9 +134,9 @@ def remove_off_links(content, off_list):
     return content
 
 def main():
-    wp_url = os.environ.get(\"WP_URL\", \"\")
-    wp_username = os.environ.get(\"WP_USERNAME\", \"\")
-    wp_password = os.environ.get(\"WP_PASSWORD\", \"\")
+    wp_url = os.environ.get("WP_URL", "")
+    wp_username = os.environ.get("WP_USERNAME", "")
+    wp_password = os.environ.get("WP_PASSWORD", "")
 
     if not (wp_url and wp_username and wp_password):
         print(\"[ERROR] Missing WP credentials\")
