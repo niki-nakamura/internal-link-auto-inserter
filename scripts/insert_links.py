@@ -139,7 +139,7 @@ def main():
     wp_password = os.environ.get("WP_PASSWORD", "")
 
     if not (wp_url and wp_username and wp_password):
-        print(\"[ERROR] Missing WP credentials\")
+        print("[ERROR] Missing WP credentials")
         return
 
     link_usage = load_json(LINK_USAGE_JSON)
