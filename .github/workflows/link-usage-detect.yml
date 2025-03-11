@@ -4,12 +4,12 @@ on:
   # 手動実行
   workflow_dispatch:
 
-  # 週1回、月曜午前3時に実行（必要に応じてお好みで）
+  # 毎日午前3時に実行
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: '0 3 * * *'
 
 permissions:
-  contents: write  # リポジトリへの書き込み権限
+  contents: write
 
 jobs:
   detect-link-usage:
@@ -21,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"  # 必要に応じて
+          python-version: "3.9"
 
       - name: Install dependencies
         run: |
@@ -35,5 +35,5 @@ jobs:
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "Update linkUsage.json via GitHub Actions (auto-detect internal links)"
+          commit_message: "Update linkUsage.json via GitHub Actions (Daily)"
           file_pattern: data/linkUsage.json
