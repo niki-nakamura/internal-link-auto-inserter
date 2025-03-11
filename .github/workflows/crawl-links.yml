@@ -1,44 +1,39 @@
 name: Crawl links
 
 on:
-  # 手動実行
+  # 手動実行も可能にする
   workflow_dispatch:
   
-  # 週1回、月曜午前3時に実行
+  # 毎日午前3時に実行（UTCベース）
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: '0 3 * * *'
 
 permissions:
-  contents: write   # リポジトリへの書き込み権限を付与
+  contents: write
 
 jobs:
   run-crawl-links:
     runs-on: ubuntu-latest
     steps:
-      # 1) リポジトリをチェックアウト
       - name: Check out repository
         uses: actions/checkout@v3
 
-      # 2) Python環境をセットアップ
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"  # 必要に応じて 3.8, 3.10等でもOK
+          python-version: "3.9"
 
-      # 3) 必要なライブラリをインストール
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      # 4) scripts/crawl_links.py を実行して articles.json を更新
       - name: Run crawl_links.py
         run: |
           python scripts/crawl_links.py
 
-      # 5) 更新された articles.json をコミット＆プッシュ
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: "Update articles.json via GitHub Actions"
+          commit_message: "Update articles.json via GitHub Actions (Daily)"
           file_pattern: data/articles.json
