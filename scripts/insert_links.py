@@ -147,10 +147,6 @@ def main():
         post_id = article["id"]
         # ここでは記事のURLを仮に article["link"] として取得する例
         article_link = article.get("link", "")
-        if not article_link.startswith("https://good-apps.jp/media/column/"):
-            # GoodAppsの該当URLで始まらない場合はスキップ
-            print(f"[SKIP] Post {post_id} not in target domain: {article_link}")
-            continue
 
         raw_content = get_post_raw_content(post_id, wp_url, wp_username, wp_password)
         if not raw_content:
